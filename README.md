@@ -13,9 +13,22 @@ in-memory adapter, and switches to the .NET API with one environment variable.
 ## Running it
 
 ```bash
-nvm use 20          # Node 20+ required (Vite 8)
+nvm use             # reads .nvmrc → Node 20
 npm install
 npm run dev         # http://localhost:5173
+```
+
+**Node 20.19+ is required** (Vite 8 / rolldown / Tailwind v4 oxide). If your
+shell defaults to an older Node, `npm install` will stop with an `EBADENGINE`
+error rather than building a tree with wrong-ABI native binaries — installing
+under Node 16 silently omits `@tailwindcss/oxide-darwin-arm64` and
+`@rolldown/binding-darwin-arm64`, and Vite then dies with a confusing
+`SyntaxError: ... does not provide an export named 'styleText'`.
+
+If you hit that, the fix is a clean reinstall on the right Node:
+
+```bash
+nvm use && rm -rf node_modules && npm ci
 ```
 
 Other scripts:
