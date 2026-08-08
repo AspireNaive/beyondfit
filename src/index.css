@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   BeyondFit design tokens.
+   Dark-first: the product is used in gyms and on phones in low light,
+   and the marketing hero sits on video, so every surface is built to
+   sit on near-black. Tokens here are the only place raw colour lives.
+   ------------------------------------------------------------------ */
+@theme {
+  /* Surfaces, darkest -> lightest */
+  --color-ink-950: #06090d;
+  --color-ink-900: #0b1017;
+  --color-ink-850: #10171f;
+  --color-ink-800: #161f2a;
+  --color-ink-700: #1e2a37;
+  --color-ink-600: #2a3949;
+  --color-ink-500: #3b4d61;
+
+  /* Type */
+  --color-chalk: #eaf1f7;
+  --color-chalk-dim: #a7b8c9;
+  --color-chalk-faint: #6d8298;
+
+  /* Primary accent — "volt". High-energy, reads as athletic, and has
+     enough luminance to carry black text at AA on small sizes. */
+  --color-volt-300: #e2ff8f;
+  --color-volt-400: #d0fb54;
+  --color-volt-500: #b6ef21;
+  --color-volt-600: #93c516;
+  --color-volt-700: #6f950f;
+
+  /* Secondary accent — used for intensity/effort, never for primary CTAs */
+  --color-ember-400: #ff8a5c;
+  --color-ember-500: #ff6a3d;
+  --color-ember-600: #e04f24;
+
+  /* Semantic */
+  --color-ok-500: #34d399;
+  --color-warn-500: #fbbf24;
+  --color-danger-500: #f87171;
+  --color-info-500: #4cc9f0;
+
+  /* Type scale + families */
+  --font-display: 'Barlow Condensed', 'Oswald', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout */
+  --spacing-gutter: 1.25rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-ink-700);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-chalk);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+
+  /* Visible, on-brand focus ring everywhere — the app is keyboard-driven
+     for coaches running sessions on a laptop. */
+  :focus-visible {
+    outline: 2px solid var(--color-volt-400);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--color-volt-400);
+    color: var(--color-ink-950);
+  }
+
+  /* Scrollbars: dark, unobtrusive, but still discoverable */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink-900);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 999px;
+    border: 2px solid var(--color-ink-900);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-500);
+  }
+}
+
+@layer components {
+  /* Section rhythm shared by every marketing block */
+  .section {
+    padding-block: clamp(3.5rem, 8vw, 7rem);
+  }
+
+  .shell {
+    width: 100%;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding-inline: var(--spacing-gutter);
+  }
+
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-volt-400);
+  }
+
+  /* Frosted panel used for cards over the video hero and in the app shell */
+  .panel {
+    background: color-mix(in srgb, var(--color-ink-850) 82%, transparent);
+    border: 1px solid var(--color-ink-700);
+    backdrop-filter: blur(12px);
+  }
+}
+
+/* Slow drift used by the hero's fallback layer when no video is present.
+   Kept in CSS (not JS) so it costs nothing on the main thread. */
+@keyframes bf-drift {
+  0% {
+    transform: scale(1.08) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.16) translate3d(-1.5%, -1.5%, 0);
+  }
+  100% {
+    transform: scale(1.08) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes bf-sweep {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translate3d(-10%, 0, 0);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate3d(10%, 0, 0);
+  }
+}
+
+@keyframes bf-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bf-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes bf-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-volt-400) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
