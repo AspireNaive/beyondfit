@@ -1,39 +1,66 @@
 # Hero video
 
-Drop the homepage background video here as **`hero.mp4`** (and optionally
-`hero.webm`, which the browser prefers when present). Nothing else needs to
-change — `VideoHero` picks it up automatically.
+`hero.webm` (628 KB) and `hero.mp4` (865 KB) back the homepage hero. Browsers
+pick WebM when they support it and fall back to MP4; `VideoHero` lists both.
 
-If you would rather serve it from a CDN, set `VITE_HERO_VIDEO_URL` instead and
-leave this folder empty.
+## Provenance
 
-## What the hero does without a video
+| | |
+| --- | --- |
+| Source | Pexels — "Close-up of Dumbbells", video id `6053511` |
+| Page | https://www.pexels.com/video/close-up-of-dumbbells-6053511/ |
+| Licence | [Pexels License](https://www.pexels.com/license/) — free for commercial use, modification allowed, **attribution not required** |
 
-The hero never depends on this file. A CSS backdrop (layered gradients, a faint
-grid and a slow drift) paints on the first frame, so the page has no empty box,
-no layout shift and no image request. The video, when present, fades in over the
-top once it is actually playing.
+Recorded here for provenance, not because the licence demands it. Two things
+the licence *does* prohibit, worth knowing before swapping in another clip:
+you may not resell it unmodified, and you may not use identifiable people in a
+way that puts them in a bad light. This clip has no people in it, which also
+sidesteps any model-release question.
 
-It is also deliberately **not** loaded when:
+## How it was encoded
 
-- the visitor has `prefers-reduced-motion: reduce` set,
-- the connection reports `saveData`, or an effective type of `2g` / `3g`,
-- the viewport is narrower than 768px — a multi-megabyte background on a phone
-  on mobile data is not a cost worth imposing.
+The source is 1280×720 (Pexels' filename claims 1080p — the stream is not), so
+it is kept at native resolution rather than upscaled to nothing.
 
-## Encoding guidance
-
-Keep it small; this is decoration sitting behind text.
+It is a **palindrome loop**: the clip is concatenated with a reversed copy of
+itself, so the end frame *is* the start frame and the wrap is invisible. A slow
+dolly shot like this cannot loop cleanly otherwise, and a visible jump-cut
+every twelve seconds is exactly the sort of thing that reads as cheap.
 
 ```bash
-# ~1080p, no audio, tuned for a short seamless loop
-ffmpeg -i source.mov -an -vf "scale=1920:-2,fps=25" \
-  -c:v libx264 -crf 30 -preset slow -movflags +faststart hero.mp4
+# 24s seamless loop, no audio, from the 12s source
+ffmpeg -i 6053511.mp4 -an -filter_complex \
+  "[0:v]fps=24,split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[out]" \
+  -map "[out]" -c:v libx264 -crf 30 -preset slower -profile:v high \
+  -pix_fmt yuv420p -movflags +faststart hero.mp4
 
-# webm is typically 30–40% smaller again
-ffmpeg -i source.mov -an -vf "scale=1920:-2,fps=25" \
-  -c:v libvpx-vp9 -crf 40 -b:v 0 hero.webm
+ffmpeg -i 6053511.mp4 -an -filter_complex \
+  "[0:v]fps=24,split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[out]" \
+  -map "[out]" -c:v libvpx-vp9 -crf 36 -b:v 0 -row-mt 1 hero.webm
 ```
 
-Aim for **under 3 MB** and 8–15 seconds. The scrim over the video is dark, so
-low-contrast, slow-moving footage reads best — fast cuts fight the headline.
+## Replacing it
+
+Drop in a new `hero.mp4` / `hero.webm` and nothing else changes. To serve from
+a CDN instead, set `VITE_HERO_VIDEO_URL` and leave this folder empty.
+
+Keep it **under ~3 MB**, dark, and slow. The scrim over the video is heavy, so
+low-contrast footage with gentle motion reads best — fast cuts fight the
+headline and win.
+
+## When the video is deliberately *not* loaded
+
+The hero never depends on this file. A CSS backdrop (layered gradients, a faint
+grid, a slow drift) paints on the first frame, so there is no empty box, no
+layout shift and no image request. The video fades in over it only once it is
+genuinely playing.
+
+It is skipped entirely when:
+
+- `prefers-reduced-motion: reduce` is set,
+- the connection reports `saveData`, or an effective type of `2g` / `3g`,
+- the viewport is narrower than 768px.
+
+That last one is deliberate: a background video is decoration, and a phone on a
+metered plan should not pay for it. Verified — on a 390px viewport the browser
+makes **zero** requests for these files.
