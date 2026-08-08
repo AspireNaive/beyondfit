@@ -29,3 +29,6 @@ dist-ssr
 
 # Bundle analysis output
 stats.html
+
+# Firebase deploy cache
+.firebase/

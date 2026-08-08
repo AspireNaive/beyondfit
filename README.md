@@ -59,6 +59,41 @@ the .NET endpoint should apply.
 
 ---
 
+## Deployment
+
+Live on Firebase Hosting: **https://beyondfit-cc69a.web.app**
+
+```bash
+npm run deploy           # builds, then deploys to the live channel
+npm run deploy:preview   # temporary preview URL, expires in 7 days
+npm run serve:prod       # serve dist/ locally *with* the real hosting headers
+```
+
+`firebase.json` carries the `predeploy` hook, so `npm run deploy` always ships a
+fresh `tsc -b && vite build` — you cannot accidentally deploy a stale `dist/`.
+
+Three things in that config are load-bearing:
+
+- **The SPA rewrite** (`** → /index.html`). Without it, a hard refresh on
+  `/app/progress` or any shared deep link 404s, because those paths only exist
+  inside the router.
+- **Split cache policy.** `/assets/**` is `immutable, max-age=31536000` because
+  those filenames are content-hashed; everything else — crucially `index.html`
+  and every rewritten route — is `no-cache, must-revalidate`. Get this backwards
+  and a deploy takes an hour to reach users, or hashed assets are re-fetched
+  forever. Verify with `npm run serve:prod`, which applies the same headers.
+- **`*.gz` / `*.br` are excluded from upload.** Firebase compresses on the fly
+  (responses come back `content-encoding: br`), so the pre-compressed copies the
+  build emits would be dead weight — 46 extra files serving nothing. They are
+  still produced for any origin you self-host behind nginx.
+
+A CSP is set in the same file. It currently allows `connect-src 'self'` only —
+**when you point the app at the .NET API on another origin, add that origin to
+`connect-src`** or every request will be blocked.
+
+`serve:prod` is the honest local check: `npm run preview` serves the built app
+but *not* the hosting headers, so it cannot catch a CSP or caching mistake.
+
 ## Architecture
 
 Feature-based on the outside, domain-driven on the inside.
