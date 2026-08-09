@@ -15,7 +15,9 @@
     "analyze": "vite build --mode analyze",
     "deploy": "firebase deploy --only hosting",
     "deploy:preview": "firebase hosting:channel:deploy preview --expires 7d",
-    "serve:prod": "firebase emulators:start --only hosting"
+    "serve:prod": "firebase emulators:start --only hosting",
+    "start": "node server.js",
+    "package:azure": "npm run build && node scripts/package-azure.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

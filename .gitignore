@@ -32,3 +32,7 @@ stats.html
 
 # Firebase deploy cache
 .firebase/
+
+# Azure deploy artifacts
+azure-deploy.zip
+.azure-stage/
