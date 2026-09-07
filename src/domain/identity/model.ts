@@ -127,7 +127,7 @@ export type AuthSession = {
   readonly expiresAt: IsoDateTime
 }
 
-/** Request/response shapes mirroring the .NET auth controller. Keeping them in
+/** Request/response shapes mirroring the API auth routes. Keeping them in
  *  the domain means swapping the mock adapter for HTTP changes no UI code. */
 export type LoginRequest = {
   readonly email: string

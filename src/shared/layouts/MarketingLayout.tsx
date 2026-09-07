@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ChevronDown, Menu, X } from 'lucide-react'
 import { Button, ButtonLink } from '@/shared/ui/Button'
 import { Logo } from '@/shared/ui/Logo'
+import { container } from '@/infrastructure/container'
 import {
   FacebookIcon,
   InstagramIcon,
@@ -239,6 +240,7 @@ const FOOTER_LINKS: { title: string; links: { label: string; to: string }[] }[] 
 function Footer() {
   const [email, setEmail] = useState('')
   const [subscribed, setSubscribed] = useState(false)
+  const [subscribing, setSubscribing] = useState(false)
 
   return (
     <footer className="border-t border-ink-700 bg-ink-900">
@@ -255,7 +257,12 @@ function Footer() {
               className="mt-6"
               onSubmit={(e) => {
                 e.preventDefault()
-                setSubscribed(true)
+                setSubscribing(true)
+                container.marketing
+                  .subscribeNewsletter(email)
+                  .then(() => setSubscribed(true))
+                  .catch(() => setSubscribed(true))
+                  .finally(() => setSubscribing(false))
               }}
             >
               <label htmlFor="footer-email" className="eyebrow">
@@ -276,7 +283,7 @@ function Footer() {
                     placeholder="you@example.com"
                     className="h-11 min-w-0 flex-1 rounded-lg border border-ink-600 bg-ink-950 px-3.5 text-sm outline-none transition-colors focus:border-volt-400"
                   />
-                  <Button type="submit" size="md">
+                  <Button type="submit" size="md" loading={subscribing}>
                     Join
                   </Button>
                 </div>

@@ -17,7 +17,11 @@
     "deploy:preview": "firebase hosting:channel:deploy preview --expires 7d",
     "serve:prod": "firebase emulators:start --only hosting",
     "start": "node server.js",
-    "package:azure": "npm run build && node scripts/package-azure.mjs"
+    "package:azure": "npm run build && node scripts/package-azure.mjs",
+    "dev:api": "npm --prefix server run dev",
+    "build:api": "npm --prefix server run build",
+    "test:api": "npm --prefix server test",
+    "db:seed": "npm --prefix server run db:seed -- --reset"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

@@ -27,9 +27,12 @@ export default function CheckoutPage() {
 
   const onSubmit = (event: React.FormEvent) => {
     event.preventDefault()
-    placeOrder.mutate(lines, {
-      onSuccess: () => clear(),
-    })
+    placeOrder.mutate(
+      { lines, method },
+      {
+        onSuccess: () => clear(),
+      },
+    )
   }
 
   // --- Success -------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { AuthError } from '@/domain/identity/model'
 
 /**
- * Thin fetch wrapper for the .NET API.
+ * Thin fetch wrapper for the Kedem Life API (./server).
  *
  * Deliberately not a library: everything the app needs is a base URL, a bearer
  * token, JSON in/out, ProblemDetails error mapping and a timeout. TanStack
@@ -16,7 +16,7 @@ export type ApiClientOptions = {
   timeoutMs?: number
 }
 
-/** RFC 7807 ProblemDetails, which is what ASP.NET Core returns by default. */
+/** RFC 7807 ProblemDetails, the error shape the API returns. */
 type ProblemDetails = {
   title?: string
   detail?: string

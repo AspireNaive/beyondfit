@@ -16,10 +16,6 @@ Four kinds of people log in, and each sees something different:
 
 ## How to log in
 
-> Sign-in is gated until launch: `/login`, `/register` and `/forgot-password`
-> redirect to `/launching-soon`. Set `VITE_AUTH_LAUNCHED=true` in the hosting
-> environment to open the real screens.
-
 Password for every account is **`kedemlife`**
 
 | Who | Email |
@@ -70,15 +66,16 @@ Pages load only when you actually visit them.
 sideways, and the background video doesn't download at all on mobile — no
 reason to spend someone's data on decoration.
 
-**The data is fake, for now.** Everything runs in the browser with sample data,
-so the site works before the backend exists. When the .NET API is ready, one
-setting switches it over. No screens need rewriting.
+**The data is real when the API is running.** Sign-in, bookings, orders,
+memberships and progress all read and write a MySQL database through the Node
+API in `server/`. The public Vercel demo still runs on in-browser sample data
+until the API is hosted on GoDaddy; the screens are identical either way.
 
 ## If someone asks
 
 **"Can it handle real numbers of users?"**
 The website part is just files on a CDN, which scales on its own. The database
-work sits behind the .NET API, which scales separately.
+work sits behind the Node API and MySQL, which scale separately.
 
 **"How long to make it real?"**
 The screens are done. What's left is the backend: real accounts, a database,

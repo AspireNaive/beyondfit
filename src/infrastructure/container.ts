@@ -5,11 +5,11 @@ import { createHttpContainer } from './http/container'
 /**
  * Composition root.
  *
- * `VITE_API_MODE=http` points the whole app at the .NET API; anything else
- * (the default today) runs against the in-memory adapter so the UI can be
- * built and demoed before the backend exists.
+ * `VITE_API_MODE=http` (the default) points the whole app at the Node API in
+ * ./server; `mock` runs against the in-memory adapter so UI work needs no
+ * database.
  */
-const mode = import.meta.env.VITE_API_MODE ?? 'mock'
+const mode = import.meta.env.VITE_API_MODE ?? 'http'
 
 export const container: Container = mode === 'http' ? createHttpContainer() : mockContainer
 

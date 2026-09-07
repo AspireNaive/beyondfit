@@ -4,7 +4,7 @@ import { homeRouteFor, useAuthStatus, useCurrentUser } from './store'
 import { RouteFallback } from '@/shared/ui/Feedback'
 
 /**
- * Client-side guards are a UX affordance, not a security control — the .NET API
+ * Client-side guards are a UX affordance, not a security control — the API
  * authorises every request independently. They exist so a member never sees an
  * admin screen flash before the server refuses it.
  */

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { container } from '@/infrastructure/container'
 import { Mail, MapPin, MessageSquare, Phone } from 'lucide-react'
 import { Button } from '@/shared/ui/Button'
 import { Input, Select, Textarea } from '@/shared/ui/Field'
@@ -16,14 +17,29 @@ export default function ContactPage() {
   const [sent, setSent] = useState(false)
   const [pending, setPending] = useState(false)
 
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const [error, setError] = useState<string | null>(null)
+
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const field = (name: string) => String(data.get(name) ?? '').trim()
     setPending(true)
-    // Stands in for POST /api/contact until the .NET endpoint exists.
-    window.setTimeout(() => {
-      setPending(false)
+    setError(null)
+    try {
+      await container.marketing.sendContactMessage({
+        firstName: field('firstName'),
+        lastName: field('lastName'),
+        email: field('email'),
+        phone: field('phone') || undefined,
+        topic: field('topic'),
+        message: field('message'),
+      })
       setSent(true)
-    }, 700)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -75,6 +91,11 @@ export default function ContactPage() {
                   required
                   placeholder="Tell us what is going on and what you are trying to achieve."
                 />
+                {error && (
+                  <p role="alert" className="text-sm text-danger-500">
+                    {error}
+                  </p>
+                )}
                 <Button type="submit" size="lg" loading={pending} className="w-full sm:w-auto">
                   Send message
                 </Button>

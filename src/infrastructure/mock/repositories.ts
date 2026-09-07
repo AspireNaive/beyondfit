@@ -37,6 +37,7 @@ import type {
   CatalogPort,
   Container,
   DirectoryPort,
+  MarketingPort,
   OrdersPort,
   PaymentsPort,
   ProgressPort,
@@ -84,7 +85,7 @@ const users: UserProfile[] = [...USERS]
 /**
  * Which roles a given sign-in portal accepts. Staff portals are deliberately
  * narrow: presenting member credentials at /admin/login fails even though the
- * credentials themselves are valid, which is what the .NET endpoint will do.
+ * credentials themselves are valid, which is what the API does.
  */
 const PORTAL_ACCEPTS: Record<Role, readonly Role[]> = {
   [Role.Member]: [Role.Member],
@@ -195,6 +196,10 @@ class MockAuth implements AuthPort {
   }
 
   async requestPasswordReset(_email: string): Promise<void> {
+    await delay(null, 400)
+  }
+
+  async resetPassword(_token: string, _password: string): Promise<void> {
     await delay(null, 400)
   }
 }
@@ -452,6 +457,7 @@ class MockOrders implements OrdersPort {
   }
 
   async placeOrder(lines: readonly CartLine[], customer: UserProfile): Promise<Order> {
+    // The mock ignores the payment method; the HTTP adapter forwards it.
     await delay(null, 800)
     if (lines.length === 0) throw new Error('Your cart is empty.')
 
@@ -505,6 +511,15 @@ class MockPayments implements PaymentsPort {
   }
 }
 
+class MockMarketing implements MarketingPort {
+  async sendContactMessage(): Promise<void> {
+    await delay(null, 700)
+  }
+  async subscribeNewsletter(): Promise<void> {
+    await delay(null, 300)
+  }
+}
+
 class MockTenants implements TenantPort {
   async getTenant(): Promise<Tenant> {
     return delay(DEFAULT_TENANT, 120)
@@ -523,4 +538,5 @@ export const mockContainer: Container = {
   orders: new MockOrders(),
   payments: new MockPayments(),
   tenants: new MockTenants(),
+  marketing: new MockMarketing(),
 }

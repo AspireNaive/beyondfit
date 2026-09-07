@@ -1,16 +1,14 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** 'mock' (default) runs the in-memory adapter; 'http' targets the .NET API. */
+  /** 'http' (default) targets the Node API in ./server; 'mock' runs the in-memory adapter. */
   readonly VITE_API_MODE?: 'mock' | 'http'
-  /** Base URL for the .NET API. Defaults to '/api', which the dev server proxies. */
+  /** Base URL for the API. Defaults to '/api', which the dev server proxies. */
   readonly VITE_API_URL?: string
   /** Artificial latency in ms for the mock adapter. */
   readonly VITE_MOCK_LATENCY?: string
   /** Optional hero video override, e.g. a CDN URL. */
   readonly VITE_HERO_VIDEO_URL?: string
-  /** 'true' opens the real sign-in/sign-up screens; unset, they redirect to /launching-soon. */
-  readonly VITE_AUTH_LAUNCHED?: string
 }
 
 interface ImportMeta {

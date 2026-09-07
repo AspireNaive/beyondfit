@@ -5,7 +5,7 @@
  * `enum`s anywhere in the domain — closed sets are a frozen const object plus
  * a derived union type. That erases to a plain object at runtime and keeps the
  * values usable as data (dropdown options, API payloads) instead of a type-only
- * construct the .NET client would have to mirror by hand.
+ * construct the API would have to mirror by hand.
  */
 
 /** Branded id: stops a CoachId being passed where a MemberId is required. */
@@ -75,7 +75,7 @@ export const multiplyMoney = (value: Money, factor: number): Money =>
 
 export const zeroMoney = (currency: Money['currency'] = 'USD'): Money => money(0, currency)
 
-/** Paged envelope mirroring what the .NET API returns for list endpoints. */
+/** Paged envelope for list endpoints, when pagination is introduced. */
 export type Page<T> = {
   readonly items: readonly T[]
   readonly total: number

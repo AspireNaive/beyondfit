@@ -25,7 +25,7 @@ import { toIsoDate } from '@/shared/lib/dates'
  *
  * Seeded PRNG rather than Math.random so the dashboard shows the same numbers
  * on every reload — screenshots stay stable and "did my change break the
- * chart?" is answerable. Replaced wholesale once the .NET API is wired up.
+ * chart?" is answerable. The same fixtures seed the real database (server/scripts/seed.ts).
  */
 function makeRng(seed: number) {
   let state = seed >>> 0

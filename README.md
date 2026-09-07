@@ -6,9 +6,30 @@ coaches and clinical specialists, member progress tracking, a storefront, and
 role-scoped dashboards for members, coaches, admins and platform operators.
 
 This repository is the **React front end**. It runs standalone today against an
-in-memory adapter, and switches to the .NET API with one environment variable.
+in-memory adapter, and switches to the Node API in `server/` with one environment variable.
 
 ---
+
+## Backend (Node.js API + MySQL)
+
+The app is no longer demo-only: `server/` is a Node.js (Express 5) API on
+MySQL/MariaDB that implements every port in `src/domain/ports.ts` — auth,
+directory, specialists and booking, progress, catalogue, orders and payments,
+memberships, tenants, and the marketing forms. The front end talks to it through
+`src/infrastructure/http/container.ts`; `VITE_API_MODE=http` is the default and
+`mock` keeps the in-memory adapter for UI work without a database.
+
+```bash
+# terminal 1 — API (needs MySQL/MariaDB; see server/.env.example)
+cd server && cp .env.example .env && npm install && npm run db:seed -- --reset && npm run dev
+# terminal 2 — web, proxies /api to the API
+npm run dev
+```
+
+Root shortcuts: `npm run dev:api`, `npm run test:api`, `npm run build:api`, `npm run db:seed`.
+Docs: `server/README.md` (setup, configuration, GoDaddy deployment),
+`docs/API.md` (every endpoint), `/api/docs` on a running server (Swagger UI),
+`postman/kedem-life-api.postman_collection.json`.
 
 ## Running it
 
@@ -43,10 +64,6 @@ Other scripts:
 
 ### Demo accounts
 
-> Sign-in is gated until launch: `/login`, `/register` and `/forgot-password`
-> redirect to `/launching-soon`. Set `VITE_AUTH_LAUNCHED=true` in the hosting
-> environment to open the real screens.
-
 Every account uses the password **`kedemlife`**. Each sign-in screen also has
 one-click buttons that fill the form for you.
 
@@ -59,7 +76,7 @@ one-click buttons that fill the form for you.
 
 Portals are enforced, not cosmetic: presenting member credentials at
 `/login/admin` is rejected even though the password is correct — the same rule
-the .NET endpoint should apply.
+the API applies as well.
 
 ---
 
@@ -67,6 +84,9 @@ the .NET endpoint should apply.
 
 Live on Vercel: **https://beyondfit.vercel.app** (Firebase Hosting mirror:
 https://beyondfit-cc69a.web.app)
+
+> The Vercel deployment runs with `VITE_API_MODE=mock` (in-browser demo data)
+> until the API is hosted on GoDaddy. See `server/README.md` → *Deploying on GoDaddy*.
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel
@@ -93,7 +113,7 @@ Three things in that config are load-bearing:
   still produced for any origin you self-host behind nginx.
 
 A CSP is set in the same file. It currently allows `connect-src 'self'` only —
-**when you point the app at the .NET API on another origin, add that origin to
+**when you point the app at the API on another origin, add that origin to
 `connect-src`** or every request will be blocked.
 
 `serve:prod` is the honest local check: `npm run preview` serves the built app
@@ -115,7 +135,7 @@ src/
     ports.ts           the interfaces the UI depends on
   infrastructure/      adapters that implement the ports
     mock/              in-memory repositories + deterministic seed data
-    http/              the .NET client (api-client.ts + container.ts)
+    http/              the API client (api-client.ts + container.ts)
     container.ts       picks the adapter from VITE_API_MODE
   features/            vertical slices — auth, marketing, booking, progress,
                        profiles, shop, orders, payments, dashboard, tenant
@@ -130,56 +150,22 @@ Three rules keep it honest:
 2. **The UI depends on `domain/ports.ts`, never on an adapter.** Screens call
    `container.scheduling.book(...)`, not `fetch`.
 3. **Closed sets are `const` objects, not TS `enum`s.** The build runs with
-   `erasableSyntaxOnly`, and it means every enum value is real data the .NET
+   `erasableSyntaxOnly`, and it means every enum value is real data the API
    client can serialise directly.
 
 ---
 
-## Wiring up the .NET backend
+## Backend integration
 
-```bash
-# .env.local
-VITE_API_MODE=http
-VITE_API_PROXY_TARGET=http://localhost:5119   # your `dotnet run` port
-```
-
-That is the whole integration. No screen or hook changes — `container.ts` swaps
-`mockContainer` for `createHttpContainer()`, and every repository call goes over
-HTTP instead. `src/infrastructure/http/api-client.ts` already handles bearer
-tokens, RFC 7807 `ProblemDetails` errors (including flattening `ModelState`
-onto form fields), timeouts and 401 handling.
-
-### Endpoints the API needs to expose
-
-Defined in `src/infrastructure/http/container.ts` — that file is the contract.
-
-**Auth**
-
-| Method | Path | Body / notes |
-| --- | --- | --- |
-| `POST` | `/api/auth/login` | `{ email, password, portal, tenantSlug?, rememberMe? }` → `AuthSession`. Reject when `portal` does not accept the account's role. |
-| `POST` | `/api/auth/register` | `{ firstName, lastName, email, password, phone?, goal? }` → `AuthSession` |
-| `POST` | `/api/auth/logout` | — |
-| `GET` | `/api/auth/me` | Revalidates the bearer token → `AuthSession` |
-| `POST` | `/api/auth/password-reset` | `{ email }`. Always 204, even for unknown addresses (no account enumeration). |
-
-**Directory, scheduling, progress, commerce**
-
-| Method | Path |
-| --- | --- |
-| `GET` | `/api/directory/mapped` — scope derived from the token, always includes self |
-| `GET` | `/api/directory/{userId}` · `/api/directory?role=` |
-| `GET` | `/api/providers` · `/api/providers/{id}` · `/api/providers/{id}/availability?date=` |
-| `GET` `POST` | `/api/appointments` · `POST /api/appointments/{id}/cancel` |
-| `GET` | `/api/members/{id}/body-metrics` · `/activity?days=` · `/goal` |
-| `POST` | `/api/members/{id}/body-metrics` |
-| `GET` | `/api/products` · `/api/products/{slug}` |
-| `GET` `POST` | `/api/orders` · `PATCH /api/orders/{id}` |
-| `GET` | `/api/payments` · `/api/subscriptions` |
-| `GET` | `/api/tenant` · `/api/tenants` |
+`src/infrastructure/http/container.ts` is the contract and `server/` is the
+implementation. `VITE_API_MODE=http` (default) makes `container.ts` use
+`createHttpContainer()`; every repository call then goes over HTTP.
+`src/infrastructure/http/api-client.ts` handles bearer tokens, RFC 7807
+`application/problem+json` errors (flattening field errors onto forms),
+timeouts and 401 handling. Endpoint reference: `docs/API.md`.
 
 The client-side route guards are a **UX affordance, not a security control** —
-authorise every request server-side from the bearer token.
+the API authorises every request from the bearer token.
 
 ---
 
@@ -235,7 +221,7 @@ reachable without colour.
 ## What is deliberately not here
 
 - **A database.** The brief was UI-first; `infrastructure/mock/` stands in until
-  the .NET API exists.
+  the API is deployed.
 - **Real payment processing.** Checkout collects details and posts an order; no
   gateway is wired up.
 - **Tests.** The domain layer is pure and designed to be tested first if you

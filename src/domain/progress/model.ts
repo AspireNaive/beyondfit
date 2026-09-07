@@ -47,7 +47,7 @@ export type MemberGoal = {
 
 // ---------------------------------------------------------------------------
 // Calculations. Pure functions — no I/O, trivially unit-testable, and the same
-// numbers the .NET service will compute server-side.
+// numbers the API computes server-side.
 // ---------------------------------------------------------------------------
 
 export const calculateBmi = (weightKg: number, heightCm: number): number => {

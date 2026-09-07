@@ -11,32 +11,35 @@ import type {
   CartLine,
   Order,
   Payment,
+  PaymentMethod,
   Product,
   ProductCategory,
   Subscription,
 } from '@/domain/commerce/model'
-import type { Container } from '@/domain/ports'
+import type { ContactMessage, Container } from '@/domain/ports'
 import type { IsoDate, OrderId, UserId } from '@/domain/shared/types'
 import { ApiClient, qs } from './api-client'
 
 /**
- * The .NET adapter.
+ * The HTTP adapter for the Node API in ./server.
  *
- * Every path below is the contract the backend needs to expose. Because the UI
- * only ever talks to `Container`, flipping VITE_API_MODE=http is the entire
- * integration — no screen or hook changes.
+ * Every path below is a route the server exposes. Because the UI only ever
+ * talks to `Container`, VITE_API_MODE=http is the entire integration — no
+ * screen or hook changes.
  */
 
 const SESSION_KEY = 'beyondfit.session'
 
-const readToken = (): string | null => {
+const readSession = (): AuthSession | null => {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
-    return raw ? ((JSON.parse(raw) as AuthSession).accessToken ?? null) : null
+    return raw ? (JSON.parse(raw) as AuthSession) : null
   } catch {
     return null
   }
 }
+
+const readToken = (): string | null => readSession()?.accessToken ?? null
 
 export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/api'): Container {
   const api = new ApiClient({
@@ -76,11 +79,18 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/
         localStorage.removeItem(SESSION_KEY)
       },
 
-      // GET /api/auth/me — revalidates the stored token and returns the session
+      // GET /api/auth/me — revalidates the stored token and refreshes user + tenant;
+      // the tokens themselves stay as issued.
       restore: async () => {
-        if (!readToken()) return null
+        const stored = readSession()
+        if (!stored?.accessToken) return null
+        if (stored.expiresAt && new Date(stored.expiresAt) < new Date()) {
+          localStorage.removeItem(SESSION_KEY)
+          return null
+        }
         try {
-          return persist(await api.get<AuthSession>('/auth/me'))
+          const fresh = await api.get<Pick<AuthSession, 'user' | 'tenant'>>('/auth/me')
+          return persist({ ...stored, ...fresh })
         } catch {
           return null
         }
@@ -88,6 +98,10 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/
 
       // POST /api/auth/password-reset
       requestPasswordReset: (email: string) => api.post<void>('/auth/password-reset', { email }),
+
+      // POST /api/auth/password-reset/confirm
+      resetPassword: (token: string, password: string) =>
+        api.post<void>('/auth/password-reset/confirm', { token, password }),
     },
 
     directory: {
@@ -131,9 +145,10 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/
     orders: {
       listOrders: (_viewer: UserProfile) => api.get<readonly Order[]>('/orders'),
       getOrder: (orderId: OrderId) => api.get<Order | null>(`/orders/${orderId}`),
-      placeOrder: (lines: readonly CartLine[], _customer: UserProfile) =>
+      placeOrder: (lines: readonly CartLine[], _customer: UserProfile, options?: { method?: PaymentMethod }) =>
         api.post<Order>('/orders', {
           lines: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity })),
+          method: options?.method ?? 'card',
         }),
       updateStatus: (orderId: OrderId, status: Order['status']) =>
         api.patch<Order>(`/orders/${orderId}`, { status }),
@@ -147,6 +162,13 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/
     tenants: {
       getTenant: () => api.get<Tenant>('/tenant'),
       listTenants: () => api.get<readonly Tenant[]>('/tenants'),
+    },
+
+    marketing: {
+      // POST /api/contact
+      sendContactMessage: (message: ContactMessage) => api.post<void>('/contact', message),
+      // POST /api/newsletter
+      subscribeNewsletter: (email: string) => api.post<void>('/newsletter', { email }),
     },
   }
 }

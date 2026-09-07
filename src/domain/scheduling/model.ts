@@ -124,7 +124,7 @@ export const isUpcoming = (appointment: Appointment, now = new Date()): boolean 
 /**
  * Members may cancel free of charge up to this point; inside the window the
  * session is billed. Encoded here so the booking screen, the detail drawer and
- * (later) the .NET service all agree on one rule.
+ * the API all agree on one rule.
  */
 export const CANCELLATION_WINDOW_HOURS = 24
 

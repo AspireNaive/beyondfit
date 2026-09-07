@@ -22,6 +22,7 @@ import type {
   CartLine,
   Order,
   Payment,
+  PaymentMethod,
   Product,
   ProductCategory,
   Subscription,
@@ -30,8 +31,8 @@ import type { IsoDate, OrderId, UserId } from '@/domain/shared/types'
 
 /**
  * Ports. The UI depends only on these interfaces; `infrastructure/` supplies
- * either the in-memory adapter (today) or the .NET HTTP adapter (once the API
- * is live). Swapping is a one-line change in `infrastructure/container.ts`.
+ * either the HTTP adapter for the Node API in ./server (the default) or the
+ * in-memory adapter. Swapping is one environment variable, VITE_API_MODE.
  */
 
 export interface AuthPort {
@@ -41,6 +42,8 @@ export interface AuthPort {
   /** Restore a session on boot — reads the persisted token, revalidates it. */
   restore(): Promise<AuthSession | null>
   requestPasswordReset(email: string): Promise<void>
+  /** Second half of the reset flow: the emailed token plus the new password. */
+  resetPassword(token: string, password: string): Promise<void>
 }
 
 export interface DirectoryPort {
@@ -78,7 +81,11 @@ export interface OrdersPort {
    *  their programs for coaches, everything for admins. */
   listOrders(viewer: UserProfile): Promise<readonly Order[]>
   getOrder(id: OrderId): Promise<Order | null>
-  placeOrder(lines: readonly CartLine[], customer: UserProfile): Promise<Order>
+  placeOrder(
+    lines: readonly CartLine[],
+    customer: UserProfile,
+    options?: { method?: PaymentMethod },
+  ): Promise<Order>
   updateStatus(id: OrderId, status: Order['status']): Promise<Order>
 }
 
@@ -92,6 +99,21 @@ export interface TenantPort {
   listTenants(): Promise<readonly Tenant[]>
 }
 
+export type ContactMessage = {
+  readonly firstName: string
+  readonly lastName: string
+  readonly email: string
+  readonly phone?: string
+  readonly topic: string
+  readonly message: string
+}
+
+/** Public forms on the marketing site. */
+export interface MarketingPort {
+  sendContactMessage(message: ContactMessage): Promise<void>
+  subscribeNewsletter(email: string): Promise<void>
+}
+
 export type Container = {
   auth: AuthPort
   directory: DirectoryPort
@@ -101,4 +123,5 @@ export type Container = {
   orders: OrdersPort
   payments: PaymentsPort
   tenants: TenantPort
+  marketing: MarketingPort
 }

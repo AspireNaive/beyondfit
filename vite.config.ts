@@ -25,11 +25,11 @@ export default defineConfig(({ mode }) => ({
 
   server: {
     port: 5173,
-    // The .NET API is proxied in dev so the browser sees a same-origin `/api`
-    // and we never fight CORS locally.
+    // The Node API (./server) is proxied in dev so the browser sees a
+    // same-origin `/api` and we never fight CORS locally.
     proxy: {
       '/api': {
-        target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:5119',
+        target: process.env.VITE_API_PROXY_TARGET ?? 'http://127.0.0.1:4000',
         changeOrigin: true,
         secure: false,
       },
