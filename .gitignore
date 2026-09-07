@@ -36,3 +36,4 @@ stats.html
 # Azure deploy artifacts
 azure-deploy.zip
 .azure-stage/
+.vercel

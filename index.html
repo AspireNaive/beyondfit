@@ -2,7 +2,8 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/media/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/media/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0B0F14" />
     <meta name="color-scheme" content="dark" />
@@ -29,6 +30,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- lottie-web plays the route loader (shared/ui/Feedback.tsx). Deferred so it
+         never blocks first paint; the loader shows a CSS ring until it arrives. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/lottie-web@5.13.0/build/player/lottie.min.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

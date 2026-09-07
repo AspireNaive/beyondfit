@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/shared/lib/cn'
 
 /** Shimmerless skeleton — a plain pulse is cheaper to composite and does not
@@ -77,11 +78,80 @@ export function ErrorState({
   )
 }
 
-/** Full-viewport route fallback shown while a lazy chunk streams in. */
+/** The slice of the lottie-web global (CDN script in index.html) we touch. */
+type LottieAnimation = {
+  addEventListener(name: 'DOMLoaded' | 'data_failed', cb: () => void): void
+  destroy(): void
+}
+type LottiePlayer = {
+  loadAnimation(options: {
+    container: Element
+    renderer: 'svg'
+    loop: boolean
+    autoplay: boolean
+    path: string
+  }): LottieAnimation
+}
+declare global {
+  interface Window {
+    lottie?: LottiePlayer
+  }
+}
+
+/** Drop a different Lottie export here to change what every loading state plays. */
+const LOADER_ANIMATION = '/media/loading.json'
+
+/** Run `cb` once the CDN player is on `window`; returns a canceller. */
+function whenLottieReady(cb: (lottie: LottiePlayer) => void): () => void {
+  if (window.lottie) {
+    cb(window.lottie)
+    return () => {}
+  }
+  const script = document.querySelector<HTMLScriptElement>('script[src*="lottie"]')
+  if (!script) return () => {}
+  const onLoad = () => window.lottie && cb(window.lottie)
+  script.addEventListener('load', onLoad)
+  return () => script.removeEventListener('load', onLoad)
+}
+
+/**
+ * Full-viewport route fallback shown while a lazy chunk streams in or the
+ * session restores. Plays the Kedem loader through lottie-web. Until the
+ * animation has painted — or if the CDN is blocked — the plain ring stands
+ * in, so the page never shows an empty gap.
+ */
 export function RouteFallback() {
+  const host = useRef<HTMLDivElement>(null)
+  const [painted, setPainted] = useState(false)
+
+  useEffect(() => {
+    const el = host.current
+    if (!el) return
+    let animation: LottieAnimation | undefined
+    const cancel = whenLottieReady((lottie) => {
+      animation = lottie.loadAnimation({
+        container: el,
+        renderer: 'svg',
+        loop: true,
+        autoplay: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        path: LOADER_ANIMATION,
+      })
+      animation.addEventListener('DOMLoaded', () => setPainted(true))
+    })
+    return () => {
+      cancel()
+      animation?.destroy()
+    }
+  }, [])
+
   return (
     <div className="grid min-h-[60vh] place-items-center" role="status" aria-label="Loading page">
-      <span className="size-8 animate-spin rounded-full border-2 border-ink-600 border-t-volt-400" />
+      <div className="relative grid size-44 place-items-center">
+        <div ref={host} className="absolute inset-0" aria-hidden />
+        {!painted && (
+          <span className="size-8 animate-spin rounded-full border-2 border-ink-600 border-t-volt-400" />
+        )}
+      </div>
     </div>
   )
 }

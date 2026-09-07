@@ -73,3 +73,15 @@ same image with the black turned into alpha (`alpha = max(r,g,b)`, colour
 un-premultiplied), trimmed to the artwork and padded back to a 512×512 square.
 Composited over black it is pixel-identical to the JPEG; over the site's
 dark surfaces it behaves like a `screen` blend, so no square edge shows.
+
+`kedem_mark.png` is the mark alone (rows cut at the first empty gap below it,
+before the wordmark), 256×256 transparent. `favicon.png` (64) and
+`apple-touch-icon.png` (180) put that mark at 78% on a `#0B0F14` rounded tile.
+
+# Loader
+
+`loading.json` is a hand-written Lottie (60 fps, 90 frames): the mark pulses
+44→50% scale and 72→100% opacity while a 28% steel arc rotates once per loop.
+It references `kedem_mark.png` by a path relative to itself, so keep the two
+together. Replace the file with any Lottie export to change what
+`RouteFallback` plays on every loading state.
