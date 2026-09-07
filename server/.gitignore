@@ -4,3 +4,6 @@ dist
 .env.*
 !.env.example
 *.log
+# service-account keys never go in git
+firebase-key.json
+*-key.json

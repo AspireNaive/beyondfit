@@ -1,7 +1,7 @@
 # Kedem Life API
 
 Reference for the Node.js/Express REST API in `server/`. The machine-readable
-source of truth is [`server/openapi.json`](../server/openapi.json) (OpenAPI 3.1),
+source of truth is [`server/src/openapi.json`](../server/src/openapi.json) (OpenAPI 3.1),
 served live at `GET /api/openapi.json` and rendered by Swagger UI at
 `GET /api/docs`. A Postman collection covering every route is in
 [`postman/kedem-life-api.postman_collection.json`](../postman/kedem-life-api.postman_collection.json).
@@ -101,7 +101,7 @@ wrong portal fail with 403 `wrong_portal`.
 | Method | Path | Auth | Purpose | Notes |
 |---|---|---|---|---|
 | GET | `/health` | public | Liveness | `{ status: "ok", uptime }`; `Cache-Control: no-store`; not logged. |
-| GET | `/openapi.json` | public | OpenAPI document | Serves `server/openapi.json`; a stub with empty `paths` if the file is missing. |
+| GET | `/openapi.json` | public | OpenAPI document | Serves `server/src/openapi.json`; a stub with empty `paths` if the file is missing. |
 | GET | `/docs` | public | Swagger UI | HTML page; loads Swagger UI from cdn.jsdelivr.net. |
 
 ## Auth

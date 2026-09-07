@@ -88,8 +88,10 @@ the API applies as well.
 Live on Vercel: **https://beyondfit.vercel.app** (Firebase Hosting mirror:
 https://beyondfit-cc69a.web.app)
 
-> The Vercel deployment runs with `VITE_API_MODE=mock` (in-browser demo data).
-> The production site and API go on GoDaddy: see `server/README.md` → *Deploying on GoDaddy*.
+> On Vercel the same API runs as a serverless function (`api/index.ts`, rewritten
+> from `/api/*`) against the real Firestore, so the live site uses real data.
+> The GoDaddy deployment (site + API in one Node process) is described in
+> `server/README.md` → *Deploying on GoDaddy*.
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

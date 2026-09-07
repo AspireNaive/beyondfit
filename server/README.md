@@ -6,7 +6,7 @@ implements every port the front end calls (`src/domain/ports.ts` → HTTP adapte
 to real data with one setting: `VITE_API_MODE=http`.
 
 - Endpoint summary: [`../docs/API.md`](../docs/API.md)
-- OpenAPI: `openapi.json` (served live at `/api/openapi.json`, browsable at `/api/docs`)
+- OpenAPI: `src/openapi.json` (served live at `/api/openapi.json`, browsable at `/api/docs`)
 - Postman: `../postman/kedem-life-api.postman_collection.json`
 
 ## Layout
