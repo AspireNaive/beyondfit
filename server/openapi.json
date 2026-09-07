@@ -1,0 +1,5520 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Kedem Life API",
+    "version": "0.1.0",
+    "description": "REST API for the Kedem Life studio platform: authentication, member directory, specialist booking, member progress, storefront, orders, payments, memberships and studio administration.\n\n**Conventions**\n- All paths are relative to `/api`. Requests and responses are JSON (bodies up to 256 kB).\n- Authentication is a JWT sent as `Authorization: Bearer <accessToken>`, obtained from `POST /auth/login`, `POST /auth/register` or `POST /auth/refresh`. Access tokens last 12 h (30 days with `rememberMe`); refresh tokens last 30 days and are single-use.\n- The bearer token is read on every request, including public routes: a malformed or expired token yields 401 and a suspended account yields 403 (`code: \"suspended\"`) even where no token was required. The user row is re-read each request, so role changes and suspensions apply immediately.\n- Errors are RFC 7807 Problem Details (`application/problem+json`): `{ type, title, status, detail, code?, errors? }`. Zod validation failures are 422 with `code: \"validation\"` and per-field `errors`. Unknown routes are 404 problems. MySQL duplicate keys surface as 409.\n- Rate limits (per IP, 15-minute window): 30 requests across `/auth/login`, `/auth/register`, `/auth/password-reset` and `/auth/password-reset/confirm`; 10 requests across `/contact` and `/newsletter`. Exceeding them returns 429 with `RateLimit`, `RateLimit-Policy` and `Retry-After` headers.\n- Handlers that return nothing answer 204 with an empty body. Some lookups deliberately return `200` with a JSON `null` body instead of 404 (single directory profile, provider, product by slug, order) so the front end can render its own empty state.\n\n**Roles and permissions** (src/domain.ts `ROLE_PERMISSIONS`)\n- `member`: progress:read:self, appointments:write\n- `coach`: + progress:read:assigned, orders:read\n- `admin`: + payments:read, catalog:write, tenant:write\n- `app_manager`: + platform:write (everything, across all studios)"
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Same origin as the web app (the dev server proxies /api to port 4000)."
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Health, this document and Swagger UI."
+    },
+    {
+      "name": "Auth",
+      "description": "Sign-in, registration, tokens, password and profile."
+    },
+    {
+      "name": "Directory",
+      "description": "People the caller may see, scoped by role and studio."
+    },
+    {
+      "name": "Providers",
+      "description": "Public specialist finder and availability."
+    },
+    {
+      "name": "Appointments",
+      "description": "Booking and managing sessions."
+    },
+    {
+      "name": "Progress",
+      "description": "Body metrics, daily activity and goals per member."
+    },
+    {
+      "name": "Catalog",
+      "description": "Public storefront reads; admin-only writes."
+    },
+    {
+      "name": "Orders",
+      "description": "Checkout and order lifecycle."
+    },
+    {
+      "name": "Payments",
+      "description": "Payment ledger."
+    },
+    {
+      "name": "Subscriptions",
+      "description": "Memberships."
+    },
+    {
+      "name": "Tenants",
+      "description": "Studios."
+    },
+    {
+      "name": "Marketing",
+      "description": "Public contact and newsletter forms."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "health",
+        "summary": "Liveness check",
+        "description": "Always public. Sent with Cache-Control: no-store and excluded from request logging.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The process is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "getOpenApi",
+        "summary": "This OpenAPI document",
+        "description": "Serves server/openapi.json. Until that file exists the response is a stub with an empty \"paths\" object.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "getDocs",
+        "summary": "Swagger UI",
+        "description": "An HTML page that renders /api/openapi.json with Swagger UI (loaded from cdn.jsdelivr.net).",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTML page.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "login",
+        "summary": "Sign in",
+        "description": "Exchanges email + password for an access/refresh token pair. Rate limited: 30 requests per 15 minutes per IP (shared with register and the password-reset routes). Checks run in this order: credentials (400 invalid_credentials), account status (403 suspended), portal (403 wrong_portal), then tenantSlug (400 invalid_credentials on mismatch). Portal acceptance: member -> member; coach -> coach; admin -> admin or app_manager; app_manager -> app_manager.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown email, wrong password, or the account is not in the named studio (code invalid_credentials).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "That email and password combination is not recognised.",
+                  "code": "invalid_credentials"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account suspended (code suspended) or the account role is not accepted by the requested portal (code wrong_portal).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Forbidden",
+                  "status": 403,
+                  "detail": "These credentials belong to a coach account. Use the matching sign-in page.",
+                  "code": "wrong_portal"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "register",
+        "summary": "Create a member account",
+        "description": "Registers a new member (the role is always member) in the named studio, or the default studio when tenantSlug is omitted, and signs them in. The new member is assigned to the studio's longest-serving active coach. Rate limited: 30 per 15 minutes per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created and signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The named studio does not exist, or no studio is set up yet.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "That studio does not exist."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered (code email_taken) or the studio has no free member seats (code seats_full).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "An account already exists for that email.",
+                  "code": "email_taken"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed, including a password shorter than 8 characters.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "password: Use at least 8 characters.",
+                  "code": "validation",
+                  "errors": {
+                    "password": [
+                      "Use at least 8 characters."
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "logout",
+        "summary": "Sign out this session",
+        "description": "Requires a valid bearer token. Revokes every refresh token of the current session. The access token itself stays valid until it expires, so clients should discard it.",
+        "responses": {
+          "204": {
+            "description": "Session revoked."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getMe",
+        "summary": "Current user and studio",
+        "description": "Requires a valid bearer token. Returns the fresh user row and its tenant, so a role change or suspension shows on the next request. Tokens are not re-issued.",
+        "responses": {
+          "200": {
+            "description": "Current user and tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The user's studio no longer exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Studio not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "updateProfile",
+        "summary": "Update own profile",
+        "description": "Requires a valid bearer token. Updates the caller's own name, phone, avatar, title, bio and location. Returns the updated profile (not a session).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "refreshSession",
+        "summary": "Rotate the refresh token",
+        "description": "Exchanges a refresh token for a new access + refresh pair in the same session. The presented refresh token is revoked; presenting it again returns 401. Not rate limited. Does not require a bearer token.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token pair.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh token unknown, expired, already used, or the account is gone or suspended.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unauthorized",
+                  "status": 401,
+                  "detail": "Your session has expired. Sign in again."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/auth/password-reset": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "requestPasswordReset",
+        "summary": "Request a password-reset email",
+        "description": "Always 204, whether or not the address exists, so accounts cannot be enumerated. When it exists a single-use token valid for 30 minutes is emailed as APP_URL/reset-password?token=... Rate limited: 30 per 15 minutes per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Accepted (no information about the address is revealed)."
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "confirmPasswordReset",
+        "summary": "Set a new password with a reset token",
+        "description": "Consumes the emailed token, stores the new password and signs out every existing session of that user. Rate limited: 30 per 15 minutes per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed; all sessions revoked."
+          },
+          "400": {
+            "description": "Token unknown, already used, or older than 30 minutes (code reset_invalid).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "That reset link is invalid or has expired. Request a new one.",
+                  "code": "reset_invalid"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "changePassword",
+        "summary": "Change own password",
+        "description": "Requires a valid bearer token. Verifies the current password before storing the new one. Existing sessions stay valid.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed."
+          },
+          "400": {
+            "description": "Current password is wrong (code invalid_credentials).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "Your current password is not correct.",
+                  "code": "invalid_credentials"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/directory/mapped": {
+      "get": {
+        "tags": [
+          "Directory"
+        ],
+        "operationId": "listMappedDirectory",
+        "summary": "People the caller may see",
+        "description": "Requires a valid bearer token. Scope is derived from the token and the caller is always included: member -> the studio's coaches; coach -> their assigned members plus fellow coaches; admin -> everyone in the studio; app_manager -> every user on the platform.",
+        "responses": {
+          "200": {
+            "description": "Visible people, caller first when not otherwise present.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "u-member-1",
+                    "tenantId": "t-ironworks",
+                    "role": "member",
+                    "firstName": "Jordan",
+                    "lastName": "Lee",
+                    "email": "member@kedemlife.app",
+                    "phone": "+1 (845) 555-0100",
+                    "avatarUrl": null,
+                    "title": "Lose 5 kg before the spring race",
+                    "joinedAt": "2025-11-03",
+                    "assignedCoachId": "u-coach-mara",
+                    "status": "active"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/directory": {
+      "get": {
+        "tags": [
+          "Directory"
+        ],
+        "operationId": "listDirectoryByRole",
+        "summary": "List users of one role",
+        "description": "Requires a valid bearer token. Scoped to the caller's studio (app_manager: platform-wide). A member may not list members (403).",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "description": "Role to list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users with that role, ordered by role, last name, first name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserProfile"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "u-member-1",
+                    "tenantId": "t-ironworks",
+                    "role": "member",
+                    "firstName": "Jordan",
+                    "lastName": "Lee",
+                    "email": "member@kedemlife.app",
+                    "phone": "+1 (845) 555-0100",
+                    "avatarUrl": null,
+                    "title": "Lose 5 kg before the spring race",
+                    "joinedAt": "2025-11-03",
+                    "assignedCoachId": "u-coach-mara",
+                    "status": "active"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "A member asked for role=member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Forbidden",
+                  "status": 403,
+                  "detail": "You do not have access to that."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "role missing or not a known role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "role: Required",
+                  "code": "validation",
+                  "errors": {
+                    "role": [
+                      "Required"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/directory/{userId}": {
+      "get": {
+        "tags": [
+          "Directory"
+        ],
+        "operationId": "getDirectoryProfile",
+        "summary": "One profile",
+        "description": "Requires a valid bearer token. Visibility: yourself always; app_manager sees anyone; otherwise the target must be in the caller's studio, where admins and coaches see everyone and members see staff only. When the user does not exist or is not visible the response is 200 with a JSON null body (not 404) so the screen renders its own empty state.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "User id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The profile, or null when unknown or not visible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/UserProfile"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "example": {
+                  "id": "u-member-1",
+                  "tenantId": "t-ironworks",
+                  "role": "member",
+                  "firstName": "Jordan",
+                  "lastName": "Lee",
+                  "email": "member@kedemlife.app",
+                  "phone": "+1 (845) 555-0100",
+                  "avatarUrl": null,
+                  "title": "Lose 5 kg before the spring race",
+                  "joinedAt": "2025-11-03",
+                  "assignedCoachId": "u-coach-mara",
+                  "status": "active"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "operationId": "listProviders",
+        "summary": "Specialist finder",
+        "description": "Public (part of the marketing site). Lists active providers who are accepting bookings, across all studios, ordered by rating then last name. Each provider is decorated with nextAvailable (first day within 14 days with a free slot).",
+        "security": [],
+        "parameters": [
+          {
+            "name": "discipline",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Discipline"
+            },
+            "description": "Only providers of this discipline."
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Case-insensitive substring match on name, title or any credential."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Provider"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "u-coach-mara",
+                    "name": "Mara Whitfield",
+                    "avatarUrl": null,
+                    "discipline": "coaching",
+                    "title": "Head Strength Coach",
+                    "bio": "Fifteen years coaching strength athletes and returning runners.",
+                    "credentials": [
+                      "CSCS",
+                      "USAW L2"
+                    ],
+                    "rating": 4.9,
+                    "reviewCount": 212,
+                    "sessionRate": {
+                      "amountMinor": 12000,
+                      "currency": "USD"
+                    },
+                    "channels": [
+                      "zoom",
+                      "google_meet",
+                      "phone",
+                      "in_person"
+                    ],
+                    "nextAvailable": "2026-09-09",
+                    "timezone": "America/New_York"
+                  }
+                ]
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/providers/{providerId}": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "operationId": "getProvider",
+        "summary": "One provider",
+        "description": "Public. Unknown or inactive provider ids return 200 with a JSON null body (not 404).",
+        "security": [],
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "description": "The provider's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Provider"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "example": {
+                  "id": "u-coach-mara",
+                  "name": "Mara Whitfield",
+                  "avatarUrl": null,
+                  "discipline": "coaching",
+                  "title": "Head Strength Coach",
+                  "bio": "Fifteen years coaching strength athletes and returning runners.",
+                  "credentials": [
+                    "CSCS",
+                    "USAW L2"
+                  ],
+                  "rating": 4.9,
+                  "reviewCount": 212,
+                  "sessionRate": {
+                    "amountMinor": 12000,
+                    "currency": "USD"
+                  },
+                  "channels": [
+                    "zoom",
+                    "google_meet",
+                    "phone",
+                    "in_person"
+                  ],
+                  "nextAvailable": "2026-09-09",
+                  "timezone": "America/New_York"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers/{providerId}/availability": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "operationId": "getProviderAvailability",
+        "summary": "Slots for one day",
+        "description": "Public. Walks the provider's working hours for the given calendar day (in the provider's timezone) in slot-length steps; a slot is available when it starts in the future and overlaps neither a live booking nor time off. Unknown providers return an empty array.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "description": "The provider's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Calendar day, YYYY-MM-DD, in the provider's timezone.",
+            "example": "2026-09-15"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slots in start order; empty when the provider has no hours that weekday or does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AvailabilitySlot"
+                  }
+                },
+                "example": [
+                  {
+                    "startsAt": "2026-09-15T14:00:00.000Z",
+                    "durationMinutes": 60,
+                    "available": true
+                  },
+                  {
+                    "startsAt": "2026-09-15T15:00:00.000Z",
+                    "durationMinutes": 60,
+                    "available": false
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "description": "date matches the pattern but is not a real date.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "date must be YYYY-MM-DD."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "date missing or not YYYY-MM-DD.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "date: Required",
+                  "code": "validation",
+                  "errors": {
+                    "date": [
+                      "Required"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments": {
+      "get": {
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "listAppointments",
+        "summary": "My appointments",
+        "description": "Requires a valid bearer token. Scope by role: member -> sessions they booked; coach -> sessions where they are the provider; admin -> every session in their studio; app_manager -> all. Ordered by start time.",
+        "responses": {
+          "200": {
+            "description": "Appointments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Appointment"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "4d2b8c4e-0f6a-4c58-9d0e-2a3f6b8c9d10",
+                    "memberId": "u-member-1",
+                    "memberName": "Jordan Lee",
+                    "providerId": "u-coach-mara",
+                    "providerName": "Mara Whitfield",
+                    "discipline": "coaching",
+                    "channel": "zoom",
+                    "startsAt": "2026-09-15T14:00:00.000Z",
+                    "durationMinutes": 60,
+                    "status": "confirmed",
+                    "price": {
+                      "amountMinor": 12000,
+                      "currency": "USD"
+                    },
+                    "memberGoal": "Build a base for a spring 10k",
+                    "createdAt": "2026-09-08T09:12:44.000Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "bookAppointment",
+        "summary": "Book a session",
+        "description": "Requires a valid bearer token. Books the caller with a provider at one of the provider's published slots. The provider must be active and accepting bookings and (unless the caller is app_manager) in the caller's studio. The booking is created as \"confirmed\" at the provider's session rate. Bookings are serialised per provider inside a transaction; a race for the same slot ends in 409. Phone sessions get a tel: joinUrl; other channels have none yet.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookAppointmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                },
+                "example": {
+                  "id": "4d2b8c4e-0f6a-4c58-9d0e-2a3f6b8c9d10",
+                  "memberId": "u-member-1",
+                  "memberName": "Jordan Lee",
+                  "providerId": "u-coach-mara",
+                  "providerName": "Mara Whitfield",
+                  "discipline": "coaching",
+                  "channel": "zoom",
+                  "startsAt": "2026-09-15T14:00:00.000Z",
+                  "durationMinutes": 60,
+                  "status": "confirmed",
+                  "price": {
+                    "amountMinor": 12000,
+                    "currency": "USD"
+                  },
+                  "memberGoal": "Build a base for a spring 10k",
+                  "createdAt": "2026-09-08T09:12:44.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provider unknown, inactive, or not taking bookings.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "That provider is no longer taking bookings."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The provider belongs to a different studio.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Forbidden",
+                  "status": 403,
+                  "detail": "That provider belongs to a different studio."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "startsAt is in the past, or the slot is already taken.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "That slot was just taken. Pick another time."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Schema failure, channel not offered by this provider, duration not 30/45/60 or longer than the provider's slot, or startsAt not one of the provider's slots for that day.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "That time is outside the provider's working hours."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments/{appointmentId}/cancel": {
+      "post": {
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "cancelAppointment",
+        "summary": "Cancel a session",
+        "description": "Requires a valid bearer token. Allowed for the booking member, the provider, an admin of the session's studio, or app_manager. Cancelling an already-cancelled session is a no-op that returns it unchanged. No body.",
+        "parameters": [
+          {
+            "name": "appointmentId",
+            "in": "path",
+            "required": true,
+            "description": "Appointment id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The appointment, now cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                },
+                "example": {
+                  "id": "4d2b8c4e-0f6a-4c58-9d0e-2a3f6b8c9d10",
+                  "memberId": "u-member-1",
+                  "memberName": "Jordan Lee",
+                  "providerId": "u-coach-mara",
+                  "providerName": "Mara Whitfield",
+                  "discipline": "coaching",
+                  "channel": "zoom",
+                  "startsAt": "2026-09-15T14:00:00.000Z",
+                  "durationMinutes": 60,
+                  "status": "cancelled",
+                  "price": {
+                    "amountMinor": 12000,
+                    "currency": "USD"
+                  },
+                  "memberGoal": "Build a base for a spring 10k",
+                  "createdAt": "2026-09-08T09:12:44.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such appointment.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Appointment not found."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session already took place (completed or no_show).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "That session has already taken place."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments/{appointmentId}": {
+      "patch": {
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "updateAppointmentStatus",
+        "summary": "Move a session through its lifecycle",
+        "description": "Requires a valid bearer token. Providers and admins move a session confirmed -> completed / no_show (or back to confirmed). Allowed for the provider, an admin of the session's studio, or app_manager; the booking member may not (use cancel instead).",
+        "parameters": [
+          {
+            "name": "appointmentId",
+            "in": "path",
+            "required": true,
+            "description": "Appointment id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated appointment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                },
+                "example": {
+                  "id": "4d2b8c4e-0f6a-4c58-9d0e-2a3f6b8c9d10",
+                  "memberId": "u-member-1",
+                  "memberName": "Jordan Lee",
+                  "providerId": "u-coach-mara",
+                  "providerName": "Mara Whitfield",
+                  "discipline": "coaching",
+                  "channel": "zoom",
+                  "startsAt": "2026-09-15T14:00:00.000Z",
+                  "durationMinutes": 60,
+                  "status": "completed",
+                  "price": {
+                    "amountMinor": 12000,
+                    "currency": "USD"
+                  },
+                  "memberGoal": "Build a base for a spring 10k",
+                  "createdAt": "2026-09-08T09:12:44.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such appointment.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Appointment not found."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session was cancelled.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "That session was cancelled."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/members/{memberId}/body-metrics": {
+      "get": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "listBodyMetrics",
+        "summary": "Body-metric history",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403. Entries are ordered by recordedOn.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BodyMetricEntry"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                    "memberId": "u-member-1",
+                    "recordedOn": "2026-09-08",
+                    "weightKg": 78.4,
+                    "heightCm": 178,
+                    "bodyFatPercent": 18.2,
+                    "restingHeartRate": 56,
+                    "waistCm": 84,
+                    "note": "Morning, fasted"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "logBodyMetric",
+        "summary": "Log a body-metric entry",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403. One entry per member per date: posting the same recordedOn again overwrites the earlier values. Always answers 201, including on overwrite.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BodyMetricInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyMetricEntry"
+                },
+                "example": {
+                  "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+                  "memberId": "u-member-1",
+                  "recordedOn": "2026-09-08",
+                  "weightKg": 78.4,
+                  "heightCm": 178,
+                  "bodyFatPercent": 18.2,
+                  "restingHeartRate": 56,
+                  "waistCm": 84,
+                  "note": "Morning, fasted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/members/{memberId}/activity": {
+      "get": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "listActivity",
+        "summary": "Daily activity for the last N days",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 366,
+              "default": 30
+            },
+            "description": "How many days back to include (default 30)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityEntry"
+                  }
+                },
+                "example": [
+                  {
+                    "memberId": "u-member-1",
+                    "date": "2026-09-08",
+                    "steps": 9400,
+                    "activeMinutes": 52,
+                    "caloriesBurned": 620,
+                    "caloriesConsumed": 2150,
+                    "proteinGrams": 148,
+                    "waterMl": 2600,
+                    "sleepHours": 7.5,
+                    "workouts": 1
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/members/{memberId}/activity/{date}": {
+      "put": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "upsertActivity",
+        "summary": "Replace one day's activity",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403. Upserts the whole day; omitted fields become 0.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "description": "Calendar day, YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored day.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityEntry"
+                },
+                "example": {
+                  "memberId": "u-member-1",
+                  "date": "2026-09-08",
+                  "steps": 9400,
+                  "activeMinutes": 52,
+                  "caloriesBurned": 620,
+                  "caloriesConsumed": 2150,
+                  "proteinGrams": 148,
+                  "waterMl": 2600,
+                  "sleepHours": 7.5,
+                  "workouts": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/members/{memberId}/goal": {
+      "get": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "getGoal",
+        "summary": "Member goal",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403. Returns the default goal when none has been saved.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Goal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberGoal"
+                },
+                "example": {
+                  "memberId": "u-member-1",
+                  "targetWeightKg": 74,
+                  "dailyCalorieTarget": 2200,
+                  "dailyProteinTarget": 150,
+                  "dailyStepTarget": 10000,
+                  "weeklyWorkoutTarget": 4,
+                  "focus": "General health"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Progress"
+        ],
+        "operationId": "upsertGoal",
+        "summary": "Replace the member goal",
+        "description": "Requires a valid bearer token. Progress access: the member themself, app_manager, and within the same studio an admin, the member's assigned coach, or any coach who has a non-cancelled appointment with the member. Unknown member -> 404; anyone else -> 403.",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "description": "The member's user id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberGoalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored goal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberGoal"
+                },
+                "example": {
+                  "memberId": "u-member-1",
+                  "targetWeightKg": 74,
+                  "dailyCalorieTarget": 2200,
+                  "dailyProteinTarget": 150,
+                  "dailyStepTarget": 10000,
+                  "weeklyWorkoutTarget": 4,
+                  "focus": "General health"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such member.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Member not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "operationId": "listProducts",
+        "summary": "Storefront catalogue",
+        "description": "Public. Active products only, in creation order.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProductCategory"
+            },
+            "description": "Only this category."
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Substring match on name or tagline."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "p-1",
+                    "slug": "foundation-12-week",
+                    "name": "Foundation: 12-Week Transformation",
+                    "tagline": "The programme most members start with",
+                    "description": "Twelve weeks of progressive strength and conditioning with weekly coach check-ins.",
+                    "category": "program",
+                    "price": {
+                      "amountMinor": 19900,
+                      "currency": "USD"
+                    },
+                    "compareAtPrice": {
+                      "amountMinor": 24900,
+                      "currency": "USD"
+                    },
+                    "imageUrl": "https://cdn.kedemlife.app/products/foundation.jpg",
+                    "accent": "#b6ef21",
+                    "rating": 4.8,
+                    "reviewCount": 143,
+                    "inStock": true,
+                    "badge": "Most popular",
+                    "digital": true,
+                    "instructorId": "u-coach-mara"
+                  }
+                ]
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Catalog"
+        ],
+        "operationId": "createProduct",
+        "summary": "Create a product",
+        "description": "Requires a valid bearer token. Needs catalog:write (admin, app_manager). The slug must be unused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "p-1",
+                  "slug": "foundation-12-week",
+                  "name": "Foundation: 12-Week Transformation",
+                  "tagline": "The programme most members start with",
+                  "description": "Twelve weeks of progressive strength and conditioning with weekly coach check-ins.",
+                  "category": "program",
+                  "price": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "compareAtPrice": {
+                    "amountMinor": 24900,
+                    "currency": "USD"
+                  },
+                  "imageUrl": "https://cdn.kedemlife.app/products/foundation.jpg",
+                  "accent": "#b6ef21",
+                  "rating": 4.8,
+                  "reviewCount": 143,
+                  "inStock": true,
+                  "badge": "Most popular",
+                  "digital": true,
+                  "instructorId": "u-coach-mara"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Slug already in use.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "A product with that slug already exists."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/products/{slugOrId}": {
+      "get": {
+        "tags": [
+          "Catalog"
+        ],
+        "operationId": "getProductBySlug",
+        "summary": "One product by slug",
+        "description": "Public. The path segment is the product SLUG (e.g. foundation-12-week), not the id. Active products only; an unknown or inactive slug returns 200 with a JSON null body (not 404).",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slugOrId",
+            "in": "path",
+            "required": true,
+            "description": "For GET: the product slug.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "examples": [
+                "foundation-12-week"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Product"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "example": {
+                  "id": "p-1",
+                  "slug": "foundation-12-week",
+                  "name": "Foundation: 12-Week Transformation",
+                  "tagline": "The programme most members start with",
+                  "description": "Twelve weeks of progressive strength and conditioning with weekly coach check-ins.",
+                  "category": "program",
+                  "price": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "compareAtPrice": {
+                    "amountMinor": 24900,
+                    "currency": "USD"
+                  },
+                  "imageUrl": "https://cdn.kedemlife.app/products/foundation.jpg",
+                  "accent": "#b6ef21",
+                  "rating": 4.8,
+                  "reviewCount": 143,
+                  "inStock": true,
+                  "badge": "Most popular",
+                  "digital": true,
+                  "instructorId": "u-coach-mara"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Catalog"
+        ],
+        "operationId": "updateProduct",
+        "summary": "Update a product",
+        "description": "Requires a valid bearer token. The path segment is the product ID (not the slug). Needs catalog:write (admin, app_manager). Any subset of fields plus \"active\" (false hides the product from the public catalogue and checkout). Returns the product even when it is inactive.",
+        "parameters": [
+          {
+            "name": "slugOrId",
+            "in": "path",
+            "required": true,
+            "description": "For PATCH: the product id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "examples": [
+                "p-1"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "p-1",
+                  "slug": "foundation-12-week",
+                  "name": "Foundation: 12-Week Transformation",
+                  "tagline": "The programme most members start with",
+                  "description": "Twelve weeks of progressive strength and conditioning with weekly coach check-ins.",
+                  "category": "program",
+                  "price": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "compareAtPrice": {
+                    "amountMinor": 24900,
+                    "currency": "USD"
+                  },
+                  "imageUrl": "https://cdn.kedemlife.app/products/foundation.jpg",
+                  "accent": "#b6ef21",
+                  "rating": 4.8,
+                  "reviewCount": 143,
+                  "inStock": true,
+                  "badge": "Most popular",
+                  "digital": true,
+                  "instructorId": "u-coach-mara"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such product.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Product not found."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A patched slug collides with another product (database unique key).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "That record already exists."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "listOrders",
+        "summary": "My orders",
+        "description": "Requires a valid bearer token. Scope by role: member -> their own orders; coach -> orders containing a product they authored (instructorId); admin -> every order in their studio; app_manager -> all. Newest first.",
+        "responses": {
+          "200": {
+            "description": "Orders.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Order"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                    "reference": "KL-10042",
+                    "customerId": "u-member-1",
+                    "customerName": "Jordan Lee",
+                    "customerEmail": "member@kedemlife.app",
+                    "lines": [
+                      {
+                        "productId": "p-1",
+                        "name": "Foundation: 12-Week Transformation",
+                        "quantity": 1,
+                        "unitPrice": {
+                          "amountMinor": 19900,
+                          "currency": "USD"
+                        },
+                        "instructorId": "u-coach-mara"
+                      }
+                    ],
+                    "subtotal": {
+                      "amountMinor": 19900,
+                      "currency": "USD"
+                    },
+                    "shipping": {
+                      "amountMinor": 0,
+                      "currency": "USD"
+                    },
+                    "tax": {
+                      "amountMinor": 1642,
+                      "currency": "USD"
+                    },
+                    "total": {
+                      "amountMinor": 21542,
+                      "currency": "USD"
+                    },
+                    "status": "paid",
+                    "placedAt": "2026-09-08T09:30:00.000Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "placeOrder",
+        "summary": "Place and pay for an order",
+        "description": "Requires a valid bearer token. Creates the order, charges it through the configured payment provider (currently \"manual\", which always succeeds) and records the payment, all in one transaction; on success the order is \"paid\". Totals are recomputed server-side: shipping is 795 minor units unless every line is digital or the subtotal reaches 12500; tax is 8.25 %. Any line in the membership category also starts a monthly subscription (unless one is already active for that product).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Paid order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                },
+                "example": {
+                  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                  "reference": "KL-10042",
+                  "customerId": "u-member-1",
+                  "customerName": "Jordan Lee",
+                  "customerEmail": "member@kedemlife.app",
+                  "lines": [
+                    {
+                      "productId": "p-1",
+                      "name": "Foundation: 12-Week Transformation",
+                      "quantity": 1,
+                      "unitPrice": {
+                        "amountMinor": 19900,
+                        "currency": "USD"
+                      },
+                      "instructorId": "u-coach-mara"
+                    }
+                  ],
+                  "subtotal": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "shipping": {
+                    "amountMinor": 0,
+                    "currency": "USD"
+                  },
+                  "tax": {
+                    "amountMinor": 1642,
+                    "currency": "USD"
+                  },
+                  "total": {
+                    "amountMinor": 21542,
+                    "currency": "USD"
+                  },
+                  "status": "paid",
+                  "placedAt": "2026-09-08T09:30:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "A product is out of stock (code out_of_stock) or the charge was declined (code payment_failed).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "Whey Isolate 2 kg is out of stock.",
+                  "code": "out_of_stock"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Schema failure, an unknown or inactive product (\"lines\": [\"Unknown product.\"]), or lines in mixed currencies.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "One of the items is no longer available.",
+                  "errors": {
+                    "lines": [
+                      "Unknown product."
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "getOrder",
+        "summary": "One order",
+        "description": "Requires a valid bearer token. Visible to the customer, an admin of the order's studio, a coach who authored one of its products, or app_manager. An unknown or invisible order returns 200 with a JSON null body (not 404).",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "Order id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Order"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "example": {
+                  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                  "reference": "KL-10042",
+                  "customerId": "u-member-1",
+                  "customerName": "Jordan Lee",
+                  "customerEmail": "member@kedemlife.app",
+                  "lines": [
+                    {
+                      "productId": "p-1",
+                      "name": "Foundation: 12-Week Transformation",
+                      "quantity": 1,
+                      "unitPrice": {
+                        "amountMinor": 19900,
+                        "currency": "USD"
+                      },
+                      "instructorId": "u-coach-mara"
+                    }
+                  ],
+                  "subtotal": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "shipping": {
+                    "amountMinor": 0,
+                    "currency": "USD"
+                  },
+                  "tax": {
+                    "amountMinor": 1642,
+                    "currency": "USD"
+                  },
+                  "total": {
+                    "amountMinor": 21542,
+                    "currency": "USD"
+                  },
+                  "status": "paid",
+                  "placedAt": "2026-09-08T09:30:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "updateOrderStatus",
+        "summary": "Move an order along",
+        "description": "Requires a valid bearer token. Needs orders:read (coach, admin, app_manager; members get 403). Then: admin only for orders in their studio; coach only for orders carrying their own products; app_manager any. Setting \"refunded\" also marks the order's payments refunded; \"shipped\"/\"delivered\" stamp fulfilledAt once. Re-sending the current status is a no-op.",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "Order id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                },
+                "example": {
+                  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                  "reference": "KL-10042",
+                  "customerId": "u-member-1",
+                  "customerName": "Jordan Lee",
+                  "customerEmail": "member@kedemlife.app",
+                  "lines": [
+                    {
+                      "productId": "p-1",
+                      "name": "Foundation: 12-Week Transformation",
+                      "quantity": 1,
+                      "unitPrice": {
+                        "amountMinor": 19900,
+                        "currency": "USD"
+                      },
+                      "instructorId": "u-coach-mara"
+                    }
+                  ],
+                  "subtotal": {
+                    "amountMinor": 19900,
+                    "currency": "USD"
+                  },
+                  "shipping": {
+                    "amountMinor": 0,
+                    "currency": "USD"
+                  },
+                  "tax": {
+                    "amountMinor": 1642,
+                    "currency": "USD"
+                  },
+                  "total": {
+                    "amountMinor": 21542,
+                    "currency": "USD"
+                  },
+                  "status": "shipped",
+                  "placedAt": "2026-09-08T09:30:00.000Z",
+                  "fulfilledAt": "2026-09-09T15:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such order.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Order not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/payments": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "operationId": "listPayments",
+        "summary": "Payment ledger",
+        "description": "Requires a valid bearer token. Needs payments:read (admin, app_manager). Admins see their studio's payments; app_manager sees all. Newest first.",
+        "responses": {
+          "200": {
+            "description": "Payments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Payment"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                    "reference": "man_Zx9Qk2LmP0a",
+                    "orderId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+                    "customerId": "u-member-1",
+                    "customerName": "Jordan Lee",
+                    "description": "Foundation: 12-Week Transformation",
+                    "gross": {
+                      "amountMinor": 21542,
+                      "currency": "USD"
+                    },
+                    "fee": {
+                      "amountMinor": 655,
+                      "currency": "USD"
+                    },
+                    "net": {
+                      "amountMinor": 20887,
+                      "currency": "USD"
+                    },
+                    "method": "card",
+                    "status": "succeeded",
+                    "processedAt": "2026-09-08T09:30:01.000Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/subscriptions": {
+      "get": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "operationId": "listSubscriptions",
+        "summary": "Memberships",
+        "description": "Requires a valid bearer token. Admins see the studio's book; members and coaches see their own memberships; app_manager sees all. Newest first.",
+        "responses": {
+          "200": {
+            "description": "Subscriptions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subscription"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+                    "memberId": "u-member-1",
+                    "memberName": "Jordan Lee",
+                    "planName": "Performance Membership",
+                    "price": {
+                      "amountMinor": 14900,
+                      "currency": "USD"
+                    },
+                    "interval": "month",
+                    "status": "active",
+                    "startedAt": "2026-09-08T09:30:01.000Z",
+                    "renewsAt": "2026-10-08T09:30:01.000Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "operationId": "subscribe",
+        "summary": "Start a membership",
+        "description": "Requires a valid bearer token. Checks out a single membership product for the caller (the same rules as POST /orders, so an order and a payment are created too) and returns the resulting monthly subscription.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Active subscription.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                },
+                "example": {
+                  "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+                  "memberId": "u-member-1",
+                  "memberName": "Jordan Lee",
+                  "planName": "Performance Membership",
+                  "price": {
+                    "amountMinor": 14900,
+                    "currency": "USD"
+                  },
+                  "interval": "month",
+                  "status": "active",
+                  "startedAt": "2026-09-08T09:30:01.000Z",
+                  "renewsAt": "2026-10-08T09:30:01.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Already subscribed to this product (code already_subscribed), or the checkout hit out_of_stock / payment_failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "You already have this membership.",
+                  "code": "already_subscribed"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Schema failure, or the product is not an active membership product.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Unprocessable Entity",
+                  "status": 422,
+                  "detail": "That product is not a membership."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriptions/{subscriptionId}/cancel": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "operationId": "cancelSubscription",
+        "summary": "Cancel a membership",
+        "description": "Requires a valid bearer token. Allowed for the subscribing member, an admin of its studio, or app_manager. Cancelling an already-cancelled subscription is a no-op. No body.",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "description": "Subscription id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The subscription, now cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                },
+                "example": {
+                  "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+                  "memberId": "u-member-1",
+                  "memberName": "Jordan Lee",
+                  "planName": "Performance Membership",
+                  "price": {
+                    "amountMinor": 14900,
+                    "currency": "USD"
+                  },
+                  "interval": "month",
+                  "status": "cancelled",
+                  "startedAt": "2026-09-08T09:30:01.000Z",
+                  "renewsAt": "2026-10-08T09:30:01.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such subscription.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Subscription not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant": {
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "operationId": "getCurrentTenant",
+        "summary": "The caller's studio",
+        "description": "Requires a valid bearer token. Any signed-in role.",
+        "responses": {
+          "200": {
+            "description": "Studio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                },
+                "example": {
+                  "id": "t-ironworks",
+                  "name": "Ironworks Performance",
+                  "slug": "ironworks",
+                  "plan": "growth",
+                  "seats": 250,
+                  "seatsUsed": 42,
+                  "createdAt": "2024-02-14",
+                  "primaryColor": "#b6ef21"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The caller's studio no longer exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Studio not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenants": {
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "operationId": "listTenants",
+        "summary": "All studios",
+        "description": "Requires a valid bearer token. Needs platform:write (app_manager only). Ordered by creation date, then name.",
+        "responses": {
+          "200": {
+            "description": "Studios.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Tenant"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "t-ironworks",
+                    "name": "Ironworks Performance",
+                    "slug": "ironworks",
+                    "plan": "growth",
+                    "seats": 250,
+                    "seatsUsed": 42,
+                    "createdAt": "2024-02-14",
+                    "primaryColor": "#b6ef21"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tenants"
+        ],
+        "operationId": "createTenant",
+        "summary": "Create a studio",
+        "description": "Requires a valid bearer token. Needs platform:write (app_manager only). The slug must be unused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created studio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                },
+                "example": {
+                  "id": "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f",
+                  "name": "Harbourside Strength",
+                  "slug": "harbourside",
+                  "plan": "growth",
+                  "seats": 250,
+                  "seatsUsed": 0,
+                  "createdAt": "2024-02-14",
+                  "primaryColor": "#b6ef21"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Slug already in use.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "A studio with that slug already exists."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/tenants/{tenantId}": {
+      "patch": {
+        "tags": [
+          "Tenants"
+        ],
+        "operationId": "updateTenant",
+        "summary": "Update a studio",
+        "description": "Requires a valid bearer token. app_manager (platform:write) may patch any studio and every field. A studio admin (tenant:write) may patch only their own studio, and only name and primaryColor: plan and seats are commercial decisions and are silently dropped from an admin's patch. Everyone else gets 403. The slug cannot be changed.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "description": "Studio id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated studio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                },
+                "example": {
+                  "id": "t-ironworks",
+                  "name": "Ironworks Performance",
+                  "slug": "ironworks",
+                  "plan": "growth",
+                  "seats": 250,
+                  "seatsUsed": 42,
+                  "createdAt": "2024-02-14",
+                  "primaryColor": "#b6ef21"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such studio.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Studio not found."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/contact": {
+      "post": {
+        "tags": [
+          "Marketing"
+        ],
+        "operationId": "submitContact",
+        "summary": "Contact form",
+        "description": "Public. Stores the message, then (when SMTP is configured) emails the studio inbox in the background; an email failure never fails the request. Rate limited: 10 requests per 15 minutes per IP (shared with the newsletter form).",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/newsletter": {
+      "post": {
+        "tags": [
+          "Marketing"
+        ],
+        "operationId": "subscribeNewsletter",
+        "summary": "Newsletter sign-up",
+        "description": "Public. Idempotent: an existing address is re-subscribed (its unsubscribed_at is cleared). Rate limited: 10 requests per 15 minutes per IP (shared with the contact form).",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewsletterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Subscribed (or re-subscribed)."
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "accessToken from /auth/login, /auth/register or /auth/refresh. Claims: sub (user id), role, tid (tenant id), sid (session id)."
+      }
+    },
+    "schemas": {
+      "Role": {
+        "type": "string",
+        "enum": [
+          "member",
+          "coach",
+          "admin",
+          "app_manager"
+        ],
+        "description": "Account role. Portals: member -> member; coach -> coach; admin -> admin or app_manager; app_manager -> app_manager."
+      },
+      "Discipline": {
+        "type": "string",
+        "enum": [
+          "coaching",
+          "nutrition",
+          "physiotherapy",
+          "medical",
+          "mental_performance"
+        ]
+      },
+      "MeetingChannel": {
+        "type": "string",
+        "enum": [
+          "zoom",
+          "google_meet",
+          "phone",
+          "in_person"
+        ]
+      },
+      "AppointmentStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "confirmed",
+          "completed",
+          "cancelled",
+          "no_show"
+        ]
+      },
+      "ProductCategory": {
+        "type": "string",
+        "enum": [
+          "program",
+          "supplement",
+          "equipment",
+          "apparel",
+          "testing",
+          "membership"
+        ]
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_payment",
+          "paid",
+          "processing",
+          "shipped",
+          "delivered",
+          "refunded",
+          "cancelled"
+        ]
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "card",
+          "apple_pay",
+          "google_pay",
+          "bank_transfer"
+        ]
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "pending",
+          "failed",
+          "refunded",
+          "disputed"
+        ]
+      },
+      "SubscriptionStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "past_due",
+          "cancelled",
+          "trialing"
+        ]
+      },
+      "TenantPlan": {
+        "type": "string",
+        "enum": [
+          "starter",
+          "growth",
+          "scale"
+        ]
+      },
+      "UserStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "invited",
+          "suspended"
+        ]
+      },
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "USD",
+          "EUR",
+          "GBP",
+          "INR"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Always \"about:blank\".",
+            "examples": [
+              "about:blank"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "HTTP reason phrase for the status.",
+            "examples": [
+              "Unprocessable Entity"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code, repeated in the body.",
+            "examples": [
+              422
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable message; the front end shows this to the user."
+          },
+          "code": {
+            "type": "string",
+            "description": "Machine-readable reason, present only for specific failures: invalid_credentials, wrong_portal, suspended, email_taken, seats_full, reset_invalid, out_of_stock, payment_failed, already_subscribed, validation.",
+            "examples": [
+              "invalid_credentials"
+            ]
+          },
+          "errors": {
+            "type": "object",
+            "description": "Field-level messages, keyed by dotted field path (\"_\" when the issue has no path). Present on 422 validation failures and some 422 business-rule failures.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "examples": [
+              {
+                "password": [
+                  "Use at least 8 characters."
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "description": "RFC 7807 Problem Details. Every error response uses Content-Type application/problem+json.",
+        "examples": [
+          {
+            "type": "about:blank",
+            "title": "Unprocessable Entity",
+            "status": 422,
+            "detail": "password: Use at least 8 characters.",
+            "code": "validation",
+            "errors": {
+              "password": [
+                "Use at least 8 characters."
+              ]
+            }
+          }
+        ]
+      },
+      "RateLimited": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "examples": [
+              "Too Many Requests"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "examples": [
+              429
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "examples": [
+              "Too many attempts. Try again in a few minutes."
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail"
+        ],
+        "description": "Body sent by express-rate-limit when a per-IP budget is exhausted. Sent as application/json (not problem+json) and without the \"type\" member. RateLimit, RateLimit-Policy and Retry-After headers accompany it."
+      },
+      "Money": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "integer",
+            "description": "Amount in the currency's minor unit (cents, pence, paise).",
+            "examples": [
+              12000
+            ]
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency"
+        ],
+        "examples": [
+          {
+            "amountMinor": 12000,
+            "currency": "USD"
+          }
+        ]
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title for staff; the sign-up \"goal\" text for members."
+          },
+          "bio": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "joinedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date, YYYY-MM-DD.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "specialties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rating": {
+            "type": "number"
+          },
+          "sessionsDelivered": {
+            "type": "integer"
+          },
+          "assignedCoachId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "role",
+          "firstName",
+          "lastName",
+          "email",
+          "avatarUrl",
+          "joinedAt",
+          "assignedCoachId",
+          "status"
+        ],
+        "description": "A person. Optional members are omitted (not null) when the row has no value; avatarUrl and assignedCoachId are always present and may be null. The password hash is never returned.",
+        "examples": [
+          {
+            "id": "u-member-1",
+            "tenantId": "t-ironworks",
+            "role": "member",
+            "firstName": "Jordan",
+            "lastName": "Lee",
+            "email": "member@kedemlife.app",
+            "phone": "+1 (845) 555-0100",
+            "avatarUrl": null,
+            "title": "Lose 5 kg before the spring race",
+            "joinedAt": "2025-11-03",
+            "assignedCoachId": "u-coach-mara",
+            "status": "active"
+          }
+        ]
+      },
+      "Tenant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/TenantPlan"
+          },
+          "seats": {
+            "type": "integer"
+          },
+          "seatsUsed": {
+            "type": "integer",
+            "description": "Live count of active members in the tenant."
+          },
+          "createdAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date, YYYY-MM-DD.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "primaryColor": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "plan",
+          "seats",
+          "seatsUsed",
+          "createdAt"
+        ],
+        "description": "A studio. primaryColor is omitted when unset.",
+        "examples": [
+          {
+            "id": "t-ironworks",
+            "name": "Ironworks Performance",
+            "slug": "ironworks",
+            "plan": "growth",
+            "seats": 250,
+            "seatsUsed": 42,
+            "createdAt": "2024-02-14",
+            "primaryColor": "#b6ef21"
+          }
+        ]
+      },
+      "AuthSession": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserProfile"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/Tenant"
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "JWT to send as \"Authorization: Bearer <accessToken>\"."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Opaque, single-use; exchange it at POST /auth/refresh."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the access token expires (12 h by default, 30 days with rememberMe)."
+          }
+        },
+        "required": [
+          "user",
+          "tenant",
+          "accessToken",
+          "refreshToken",
+          "expiresAt"
+        ],
+        "examples": [
+          {
+            "user": {
+              "id": "u-member-1",
+              "tenantId": "t-ironworks",
+              "role": "member",
+              "firstName": "Jordan",
+              "lastName": "Lee",
+              "email": "member@kedemlife.app",
+              "phone": "+1 (845) 555-0100",
+              "avatarUrl": null,
+              "title": "Lose 5 kg before the spring race",
+              "joinedAt": "2025-11-03",
+              "assignedCoachId": "u-coach-mara",
+              "status": "active"
+            },
+            "tenant": {
+              "id": "t-ironworks",
+              "name": "Ironworks Performance",
+              "slug": "ironworks",
+              "plan": "growth",
+              "seats": 250,
+              "seatsUsed": 42,
+              "createdAt": "2024-02-14",
+              "primaryColor": "#b6ef21"
+            },
+            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1LW1lbWJlci0xIn0.signature",
+            "refreshToken": "Qm9vay1hLXNlc3Npb24tdG9kYXk_refresh-token",
+            "expiresAt": "2026-09-08T22:00:00.000Z"
+          }
+        ]
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserProfile"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/Tenant"
+          }
+        },
+        "required": [
+          "user",
+          "tenant"
+        ],
+        "description": "The current user and studio for the presented token. No tokens are included: the client keeps the ones it has.",
+        "examples": [
+          {
+            "user": {
+              "id": "u-member-1",
+              "tenantId": "t-ironworks",
+              "role": "member",
+              "firstName": "Jordan",
+              "lastName": "Lee",
+              "email": "member@kedemlife.app",
+              "phone": "+1 (845) 555-0100",
+              "avatarUrl": null,
+              "title": "Lose 5 kg before the spring race",
+              "joinedAt": "2025-11-03",
+              "assignedCoachId": "u-coach-mara",
+              "status": "active"
+            },
+            "tenant": {
+              "id": "t-ironworks",
+              "name": "Ironworks Performance",
+              "slug": "ironworks",
+              "plan": "growth",
+              "seats": 250,
+              "seatsUsed": 42,
+              "createdAt": "2024-02-14",
+              "primaryColor": "#b6ef21"
+            }
+          }
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The provider's user id."
+          },
+          "name": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "discipline": {
+            "$ref": "#/components/schemas/Discipline"
+          },
+          "title": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rating": {
+            "type": "number"
+          },
+          "reviewCount": {
+            "type": "integer"
+          },
+          "sessionRate": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingChannel"
+            }
+          },
+          "nextAvailable": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First calendar day (provider timezone) within the next 14 days that still has a free slot; omitted when there is none.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone the provider's working hours are defined in.",
+            "examples": [
+              "America/New_York"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "avatarUrl",
+          "discipline",
+          "title",
+          "bio",
+          "credentials",
+          "rating",
+          "reviewCount",
+          "sessionRate",
+          "channels",
+          "timezone"
+        ],
+        "examples": [
+          {
+            "id": "u-coach-mara",
+            "name": "Mara Whitfield",
+            "avatarUrl": null,
+            "discipline": "coaching",
+            "title": "Head Strength Coach",
+            "bio": "Fifteen years coaching strength athletes and returning runners.",
+            "credentials": [
+              "CSCS",
+              "USAW L2"
+            ],
+            "rating": 4.9,
+            "reviewCount": 212,
+            "sessionRate": {
+              "amountMinor": 12000,
+              "currency": "USD"
+            },
+            "channels": [
+              "zoom",
+              "google_meet",
+              "phone",
+              "in_person"
+            ],
+            "nextAvailable": "2026-09-09",
+            "timezone": "America/New_York"
+          }
+        ]
+      },
+      "AvailabilitySlot": {
+        "type": "object",
+        "properties": {
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMinutes": {
+            "type": "integer"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "false when the slot is in the past, already booked, or inside time off."
+          }
+        },
+        "required": [
+          "startsAt",
+          "durationMinutes",
+          "available"
+        ],
+        "examples": [
+          {
+            "startsAt": "2026-09-15T14:00:00.000Z",
+            "durationMinutes": 60,
+            "available": true
+          }
+        ]
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "providerName": {
+            "type": "string"
+          },
+          "discipline": {
+            "$ref": "#/components/schemas/Discipline"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/MeetingChannel"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMinutes": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AppointmentStatus"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "joinUrl": {
+            "type": "string",
+            "description": "Only phone sessions get one today (a tel: link to the provider). Omitted otherwise."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "memberGoal": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "memberName",
+          "providerId",
+          "providerName",
+          "discipline",
+          "channel",
+          "startsAt",
+          "durationMinutes",
+          "status",
+          "price",
+          "createdAt"
+        ],
+        "examples": [
+          {
+            "id": "4d2b8c4e-0f6a-4c58-9d0e-2a3f6b8c9d10",
+            "memberId": "u-member-1",
+            "memberName": "Jordan Lee",
+            "providerId": "u-coach-mara",
+            "providerName": "Mara Whitfield",
+            "discipline": "coaching",
+            "channel": "zoom",
+            "startsAt": "2026-09-15T14:00:00.000Z",
+            "durationMinutes": 60,
+            "status": "confirmed",
+            "price": {
+              "amountMinor": 12000,
+              "currency": "USD"
+            },
+            "memberGoal": "Build a base for a spring 10k",
+            "createdAt": "2026-09-08T09:12:44.000Z"
+          }
+        ]
+      },
+      "BodyMetricEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "recordedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date, YYYY-MM-DD.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "heightCm": {
+            "type": "number"
+          },
+          "bodyFatPercent": {
+            "type": "number"
+          },
+          "restingHeartRate": {
+            "type": "integer"
+          },
+          "waistCm": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "recordedOn",
+          "weightKg",
+          "heightCm"
+        ],
+        "examples": [
+          {
+            "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "memberId": "u-member-1",
+            "recordedOn": "2026-09-08",
+            "weightKg": 78.4,
+            "heightCm": 178,
+            "bodyFatPercent": 18.2,
+            "restingHeartRate": 56,
+            "waistCm": 84,
+            "note": "Morning, fasted"
+          }
+        ]
+      },
+      "ActivityEntry": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date, YYYY-MM-DD.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "steps": {
+            "type": "integer"
+          },
+          "activeMinutes": {
+            "type": "integer"
+          },
+          "caloriesBurned": {
+            "type": "integer"
+          },
+          "caloriesConsumed": {
+            "type": "integer"
+          },
+          "proteinGrams": {
+            "type": "integer"
+          },
+          "waterMl": {
+            "type": "integer"
+          },
+          "sleepHours": {
+            "type": "number"
+          },
+          "workouts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "memberId",
+          "date",
+          "steps",
+          "activeMinutes",
+          "caloriesBurned",
+          "caloriesConsumed",
+          "proteinGrams",
+          "waterMl",
+          "sleepHours",
+          "workouts"
+        ],
+        "examples": [
+          {
+            "memberId": "u-member-1",
+            "date": "2026-09-08",
+            "steps": 9400,
+            "activeMinutes": 52,
+            "caloriesBurned": 620,
+            "caloriesConsumed": 2150,
+            "proteinGrams": 148,
+            "waterMl": 2600,
+            "sleepHours": 7.5,
+            "workouts": 1
+          }
+        ]
+      },
+      "MemberGoal": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string"
+          },
+          "targetWeightKg": {
+            "type": "number"
+          },
+          "dailyCalorieTarget": {
+            "type": "integer"
+          },
+          "dailyProteinTarget": {
+            "type": "integer"
+          },
+          "dailyStepTarget": {
+            "type": "integer"
+          },
+          "weeklyWorkoutTarget": {
+            "type": "integer"
+          },
+          "focus": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "dailyCalorieTarget",
+          "dailyProteinTarget",
+          "dailyStepTarget",
+          "weeklyWorkoutTarget",
+          "focus"
+        ],
+        "description": "When a member has never saved a goal, GET returns the default (2200 kcal, 150 g protein, 10000 steps, 4 workouts, focus \"General health\").",
+        "examples": [
+          {
+            "memberId": "u-member-1",
+            "targetWeightKg": 74,
+            "dailyCalorieTarget": 2200,
+            "dailyProteinTarget": 150,
+            "dailyStepTarget": 10000,
+            "weeklyWorkoutTarget": 4,
+            "focus": "General health"
+          }
+        ]
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ProductCategory"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "compareAtPrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "imageUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "accent": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "reviewCount": {
+            "type": "integer"
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "badge": {
+            "type": "string"
+          },
+          "digital": {
+            "type": "boolean"
+          },
+          "instructorId": {
+            "type": "string",
+            "description": "Coach who authored the product; drives coach visibility of orders."
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "tagline",
+          "description",
+          "category",
+          "price",
+          "accent",
+          "rating",
+          "reviewCount",
+          "inStock",
+          "digital"
+        ],
+        "examples": [
+          {
+            "id": "p-1",
+            "slug": "foundation-12-week",
+            "name": "Foundation: 12-Week Transformation",
+            "tagline": "The programme most members start with",
+            "description": "Twelve weeks of progressive strength and conditioning with weekly coach check-ins.",
+            "category": "program",
+            "price": {
+              "amountMinor": 19900,
+              "currency": "USD"
+            },
+            "compareAtPrice": {
+              "amountMinor": 24900,
+              "currency": "USD"
+            },
+            "imageUrl": "https://cdn.kedemlife.app/products/foundation.jpg",
+            "accent": "#b6ef21",
+            "rating": 4.8,
+            "reviewCount": 143,
+            "inStock": true,
+            "badge": "Most popular",
+            "digital": true,
+            "instructorId": "u-coach-mara"
+          }
+        ]
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unitPrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "instructorId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId",
+          "name",
+          "quantity",
+          "unitPrice"
+        ],
+        "examples": [
+          {
+            "productId": "p-1",
+            "name": "Foundation: 12-Week Transformation",
+            "quantity": 1,
+            "unitPrice": {
+              "amountMinor": 19900,
+              "currency": "USD"
+            },
+            "instructorId": "u-coach-mara"
+          }
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string",
+            "description": "Sequential, human-readable: KL-10001, KL-10002, ...",
+            "examples": [
+              "KL-10042"
+            ]
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "customerEmail": {
+            "type": "string",
+            "format": "email"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "shipping": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Flat 795 minor units unless every line is digital or the subtotal is at least 12500 minor units."
+          },
+          "tax": {
+            "$ref": "#/components/schemas/Money",
+            "description": "subtotal x 8.25 %, rounded."
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "placedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fulfilledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "trackingNumber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "customerId",
+          "customerName",
+          "customerEmail",
+          "lines",
+          "subtotal",
+          "shipping",
+          "tax",
+          "total",
+          "status",
+          "placedAt"
+        ],
+        "examples": [
+          {
+            "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "reference": "KL-10042",
+            "customerId": "u-member-1",
+            "customerName": "Jordan Lee",
+            "customerEmail": "member@kedemlife.app",
+            "lines": [
+              {
+                "productId": "p-1",
+                "name": "Foundation: 12-Week Transformation",
+                "quantity": 1,
+                "unitPrice": {
+                  "amountMinor": 19900,
+                  "currency": "USD"
+                },
+                "instructorId": "u-coach-mara"
+              }
+            ],
+            "subtotal": {
+              "amountMinor": 19900,
+              "currency": "USD"
+            },
+            "shipping": {
+              "amountMinor": 0,
+              "currency": "USD"
+            },
+            "tax": {
+              "amountMinor": 1642,
+              "currency": "USD"
+            },
+            "total": {
+              "amountMinor": 21542,
+              "currency": "USD"
+            },
+            "status": "paid",
+            "placedAt": "2026-09-08T09:30:00.000Z"
+          }
+        ]
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "gross": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "fee": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Manual provider: 2.9 % + 30 minor units, or 0 for bank_transfer."
+          },
+          "net": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "cardLast4": {
+            "type": "string"
+          },
+          "cardBrand": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payoutId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "customerId",
+          "customerName",
+          "description",
+          "gross",
+          "fee",
+          "net",
+          "method",
+          "status",
+          "processedAt"
+        ],
+        "examples": [
+          {
+            "id": "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+            "reference": "man_Zx9Qk2LmP0a",
+            "orderId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "customerId": "u-member-1",
+            "customerName": "Jordan Lee",
+            "description": "Foundation: 12-Week Transformation",
+            "gross": {
+              "amountMinor": 21542,
+              "currency": "USD"
+            },
+            "fee": {
+              "amountMinor": 655,
+              "currency": "USD"
+            },
+            "net": {
+              "amountMinor": 20887,
+              "currency": "USD"
+            },
+            "method": "card",
+            "status": "succeeded",
+            "processedAt": "2026-09-08T09:30:01.000Z"
+          }
+        ]
+      },
+      "Subscription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "planName": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "month",
+              "year"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionStatus"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "renewsAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "memberName",
+          "planName",
+          "price",
+          "interval",
+          "status",
+          "startedAt",
+          "renewsAt"
+        ],
+        "examples": [
+          {
+            "id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+            "memberId": "u-member-1",
+            "memberName": "Jordan Lee",
+            "planName": "Performance Membership",
+            "price": {
+              "amountMinor": 14900,
+              "currency": "USD"
+            },
+            "interval": "month",
+            "status": "active",
+            "startedAt": "2026-09-08T09:30:01.000Z",
+            "renewsAt": "2026-10-08T09:30:01.000Z"
+          }
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "uptime": {
+            "type": "integer",
+            "description": "Process uptime in whole seconds."
+          }
+        },
+        "required": [
+          "status",
+          "uptime"
+        ],
+        "examples": [
+          {
+            "status": "ok",
+            "uptime": 8123
+          }
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Trimmed and lower-cased before lookup."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          },
+          "portal": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Which sign-in page is being used. Defaults to member. The account role must be one the portal accepts, otherwise 403 wrong_portal.",
+            "default": "member"
+          },
+          "tenantSlug": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional. When given, the account must belong to that studio; a mismatch is reported as invalid_credentials."
+          },
+          "rememberMe": {
+            "type": "boolean",
+            "description": "Issue a 30-day access token instead of the default 12-hour one."
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "examples": [
+          {
+            "email": "member@kedemlife.app",
+            "password": "kedemlife",
+            "portal": "member",
+            "rememberMe": true
+          }
+        ]
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "Stored as the member's \"title\"."
+          },
+          "tenantSlug": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Studio to join. Omitted: the default studio."
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "email",
+          "password"
+        ],
+        "description": "Creates a member account (role is always member) assigned to the studio's longest-serving active coach.",
+        "examples": [
+          {
+            "firstName": "Jordan",
+            "lastName": "Lee",
+            "email": "jordan.lee@example.com",
+            "password": "longenough2",
+            "phone": "+1 555 010 0100",
+            "goal": "Run a 10k",
+            "tenantSlug": "ironworks"
+          }
+        ]
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "refreshToken"
+        ],
+        "examples": [
+          {
+            "refreshToken": "Qm9vay1hLXNlc3Npb24tdG9kYXk_refresh-token"
+          }
+        ]
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "examples": [
+          {
+            "email": "member@kedemlife.app"
+          }
+        ]
+      },
+      "PasswordResetConfirmRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The token from the emailed reset link (valid 30 minutes, single use)."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "examples": [
+          {
+            "token": "x1Yz...reset-token",
+            "password": "newlongpassword"
+          }
+        ]
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "examples": [
+          {
+            "currentPassword": "kedemlife",
+            "newPassword": "longenough2"
+          }
+        ]
+      },
+      "ProfilePatch": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 512
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 160
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          }
+        },
+        "description": "All members optional; send null to clear a nullable field.",
+        "examples": [
+          {
+            "firstName": "Jordan",
+            "bio": "Weekend trail runner.",
+            "location": "Beacon, NY",
+            "phone": null
+          }
+        ]
+      },
+      "BookAppointmentRequest": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 instant with offset (Z or +hh:mm). Must equal the start of one of the provider's published slots for that day and be in the future."
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "enum": [
+              30,
+              45,
+              60
+            ],
+            "description": "Must be 30, 45 or 60 and no longer than the provider's slot length."
+          },
+          "channel": {
+            "$ref": "#/components/schemas/MeetingChannel"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "providerId",
+          "startsAt",
+          "durationMinutes",
+          "channel"
+        ],
+        "examples": [
+          {
+            "providerId": "u-coach-mara",
+            "startsAt": "2026-09-15T14:00:00.000Z",
+            "durationMinutes": 60,
+            "channel": "zoom",
+            "goal": "Build a base for a spring 10k"
+          }
+        ]
+      },
+      "AppointmentStatusUpdate": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "completed",
+              "no_show"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "examples": [
+          {
+            "status": "completed"
+          }
+        ]
+      },
+      "BodyMetricInput": {
+        "type": "object",
+        "properties": {
+          "recordedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Calendar date, YYYY-MM-DD.",
+            "examples": [
+              "2026-09-08"
+            ]
+          },
+          "weightKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 500
+          },
+          "heightCm": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 300
+          },
+          "bodyFatPercent": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 80
+          },
+          "restingHeartRate": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 250
+          },
+          "waistCm": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 300
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "memberId": {
+            "type": "string",
+            "description": "Accepted but ignored; the path parameter wins."
+          }
+        },
+        "required": [
+          "recordedOn",
+          "weightKg",
+          "heightCm"
+        ],
+        "description": "One point per member per recordedOn date: logging the same day again overwrites it.",
+        "examples": [
+          {
+            "recordedOn": "2026-09-08",
+            "weightKg": 78.4,
+            "heightCm": 178,
+            "bodyFatPercent": 18.2,
+            "restingHeartRate": 56,
+            "waistCm": 84,
+            "note": "Morning, fasted"
+          }
+        ]
+      },
+      "ActivityInput": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 200000,
+            "default": 0
+          },
+          "activeMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440,
+            "default": 0
+          },
+          "caloriesBurned": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000,
+            "default": 0
+          },
+          "caloriesConsumed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000,
+            "default": 0
+          },
+          "proteinGrams": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 0
+          },
+          "waterMl": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000,
+            "default": 0
+          },
+          "sleepHours": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 24,
+            "default": 0
+          },
+          "workouts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 0
+          }
+        },
+        "description": "Every field defaults to 0, so a missing field resets it. Send the full day.",
+        "examples": [
+          {
+            "steps": 9400,
+            "activeMinutes": 52,
+            "caloriesBurned": 620,
+            "caloriesConsumed": 2150,
+            "proteinGrams": 148,
+            "waterMl": 2600,
+            "sleepHours": 7.5,
+            "workouts": 1
+          }
+        ]
+      },
+      "MemberGoalInput": {
+        "type": "object",
+        "properties": {
+          "targetWeightKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 500
+          },
+          "dailyCalorieTarget": {
+            "type": "integer",
+            "minimum": 800,
+            "maximum": 10000
+          },
+          "dailyProteinTarget": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 500
+          },
+          "dailyStepTarget": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 100000
+          },
+          "weeklyWorkoutTarget": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 14
+          },
+          "focus": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "dailyCalorieTarget",
+          "dailyProteinTarget",
+          "dailyStepTarget",
+          "weeklyWorkoutTarget",
+          "focus"
+        ],
+        "examples": [
+          {
+            "targetWeightKg": 74,
+            "dailyCalorieTarget": 2200,
+            "dailyProteinTarget": 150,
+            "dailyStepTarget": 10000,
+            "weeklyWorkoutTarget": 4,
+            "focus": "Strength and a spring 10k"
+          }
+        ]
+      },
+      "ProductInput": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$",
+            "description": "Lower-cased on input; must be unique."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 160
+          },
+          "tagline": {
+            "type": "string",
+            "maxLength": 200,
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "category": {
+            "$ref": "#/components/schemas/ProductCategory"
+          },
+          "priceMinor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency",
+            "default": "USD"
+          },
+          "compareAtMinor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 512
+          },
+          "accent": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "default": "#b6ef21"
+          },
+          "inStock": {
+            "type": "boolean",
+            "default": true
+          },
+          "badge": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60
+          },
+          "digital": {
+            "type": "boolean",
+            "default": false
+          },
+          "instructorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "description",
+          "category",
+          "priceMinor"
+        ],
+        "examples": [
+          {
+            "slug": "mobility-reset-4-week",
+            "name": "Mobility Reset: 4 Weeks",
+            "tagline": "Move better in a month",
+            "description": "Four weeks of daily 15-minute mobility sessions.",
+            "category": "program",
+            "priceMinor": 4900,
+            "currency": "USD",
+            "compareAtMinor": 6900,
+            "accent": "#b6ef21",
+            "inStock": true,
+            "digital": true,
+            "instructorId": "u-coach-mara"
+          }
+        ]
+      },
+      "ProductPatch": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 160
+          },
+          "tagline": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "category": {
+            "$ref": "#/components/schemas/ProductCategory"
+          },
+          "priceMinor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "compareAtMinor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 512
+          },
+          "accent": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "badge": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60
+          },
+          "digital": {
+            "type": "boolean"
+          },
+          "instructorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false hides the product from the public catalogue and from checkout."
+          }
+        },
+        "description": "Any subset of ProductInput plus \"active\". Slug uniqueness is not re-checked on PATCH (a duplicate surfaces as 409 from the database).",
+        "examples": [
+          {
+            "priceMinor": 17900,
+            "badge": "Autumn offer",
+            "inStock": true
+          }
+        ]
+      },
+      "OrderLineInput": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "productId",
+          "quantity"
+        ]
+      },
+      "PlaceOrderRequest": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLineInput"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Duplicate productIds are merged. All products must be active, in stock and share one currency."
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod",
+            "default": "card"
+          }
+        },
+        "required": [
+          "lines"
+        ],
+        "examples": [
+          {
+            "lines": [
+              {
+                "productId": "p-1",
+                "quantity": 1
+              },
+              {
+                "productId": "p-4",
+                "quantity": 2
+              }
+            ],
+            "method": "card"
+          }
+        ]
+      },
+      "OrderStatusUpdate": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "examples": [
+          {
+            "status": "shipped"
+          }
+        ]
+      },
+      "SubscribeRequest": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Must be a product in the membership category."
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod",
+            "default": "card"
+          }
+        },
+        "required": [
+          "productId"
+        ],
+        "examples": [
+          {
+            "productId": "p-9",
+            "method": "card"
+          }
+        ]
+      },
+      "TenantInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 160
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$",
+            "description": "Lower-case letters, digits and hyphens only; lower-cased on input; unique."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/TenantPlan",
+            "default": "starter"
+          },
+          "seats": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "default": 100
+          },
+          "primaryColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "examples": [
+          {
+            "name": "Harbourside Strength",
+            "slug": "harbourside",
+            "plan": "growth",
+            "seats": 200,
+            "primaryColor": "#0ea5e9"
+          }
+        ]
+      },
+      "TenantPatch": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 160
+          },
+          "plan": {
+            "$ref": "#/components/schemas/TenantPlan",
+            "description": "Applied only when the caller has platform:write; silently dropped for studio admins."
+          },
+          "seats": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "description": "Applied only when the caller has platform:write; silently dropped for studio admins."
+          },
+          "primaryColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        },
+        "description": "The slug cannot be changed.",
+        "examples": [
+          {
+            "name": "Ironworks Performance Lab",
+            "primaryColor": "#b6ef21"
+          }
+        ]
+      },
+      "ContactRequest": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "topic": {
+            "type": "string",
+            "enum": [
+              "coaching",
+              "testing",
+              "specialists",
+              "orders",
+              "platform",
+              "other"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "email",
+          "message"
+        ],
+        "description": "topic defaults to \"other\".",
+        "examples": [
+          {
+            "firstName": "Sam",
+            "lastName": "Rivera",
+            "email": "sam@example.com",
+            "phone": "+1 555 010 0199",
+            "topic": "coaching",
+            "message": "Do you run small-group strength blocks in the evenings?"
+          }
+        ]
+      },
+      "ContactResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Id of the stored message."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "examples": [
+          {
+            "id": "3f2b1c0d-9e8f-4a7b-b6c5-d4e3f2a1b0c9"
+          }
+        ]
+      },
+      "NewsletterRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 40,
+            "default": "footer",
+            "description": "Where the form lives, for attribution."
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "examples": [
+          {
+            "email": "sam@example.com",
+            "source": "footer"
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "No bearer token, or the token is expired, malformed, or belongs to a deleted account.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "example": {
+              "type": "about:blank",
+              "title": "Unauthorized",
+              "status": 401,
+              "detail": "Sign in to continue."
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Signed in, but not allowed. Also returned (code \"suspended\") on any route when the presented token belongs to a suspended account.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "example": {
+              "type": "about:blank",
+              "title": "Forbidden",
+              "status": 403,
+              "detail": "You do not have access to that."
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "The body, query or path failed schema validation. \"errors\" maps field paths to messages; code is \"validation\".",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "example": {
+              "type": "about:blank",
+              "title": "Unprocessable Entity",
+              "status": 422,
+              "detail": "email: Enter a valid email address.",
+              "code": "validation",
+              "errors": {
+                "email": [
+                  "Enter a valid email address."
+                ]
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Per-IP budget exhausted for this endpoint. Check the Retry-After and RateLimit headers.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds until the window resets.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "RateLimit": {
+            "description": "IETF draft-8 rate-limit header (limit, remaining, reset).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "RateLimit-Policy": {
+            "description": "IETF draft-8 rate-limit policy header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RateLimited"
+            },
+            "example": {
+              "title": "Too Many Requests",
+              "status": 429,
+              "detail": "Too many attempts. Try again in a few minutes."
+            }
+          }
+        }
+      }
+    }
+  }
+}
