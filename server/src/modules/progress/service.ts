@@ -1,5 +1,4 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import { queryOne } from '../../db/pool.js'
+import { col, db } from '../../db/firestore.js'
 import { Role, type UserProfile } from '../../domain.js'
 import { forbidden, notFound } from '../../lib/errors.js'
 import { findUserById } from '../users/repository.js'
@@ -17,11 +16,14 @@ export async function assertProgressAccess(viewer: UserProfile, memberId: string
   if (viewer.role === Role.Admin) return member
   if (viewer.role === Role.Coach) {
     if (member.assignedCoachId === viewer.id) return member
-    const session = await queryOne<RowDataPacket & { id: string }>(
-      `SELECT id FROM appointments WHERE provider_id = ? AND member_id = ? AND status <> 'cancelled' LIMIT 1`,
-      [viewer.id, member.id],
-    )
-    if (session) return member
+    const session = await db
+      .collection(col.appointments)
+      .where('providerId', '==', viewer.id)
+      .where('memberId', '==', member.id)
+      .where('status', 'in', ['pending', 'confirmed', 'completed', 'no_show'])
+      .limit(1)
+      .get()
+    if (!session.empty) return member
   }
   throw forbidden()
 }

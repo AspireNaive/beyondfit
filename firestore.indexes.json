@@ -1,0 +1,15 @@
+{
+  "indexes": [
+    { "collectionGroup": "appointments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "providerId", "order": "ASCENDING" }, { "fieldPath": "startsAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "appointments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "memberId", "order": "ASCENDING" }, { "fieldPath": "startsAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "appointments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "startsAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "bodyMetrics", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "memberId", "order": "ASCENDING" }, { "fieldPath": "recordedOn", "order": "ASCENDING" } ] },
+    { "collectionGroup": "activity", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "memberId", "order": "ASCENDING" }, { "fieldPath": "date", "order": "DESCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "customerId", "order": "ASCENDING" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "instructorIds", "arrayConfig": "CONTAINS" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "customerId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

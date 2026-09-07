@@ -2,7 +2,7 @@
   "name": "kedem-life-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Kedem Life REST API \u2014 Node.js/Express on MySQL (GoDaddy)",
+  "description": "Kedem Life REST API \u2014 Node.js/Express on Cloud Firestore",
   "type": "module",
   "main": "dist/index.js",
   "engines": {
@@ -13,11 +13,11 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:bootstrap": "tsx scripts/bootstrap.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "firebase emulators:exec --only firestore --project demo-kedem --config ../firebase.json \"vitest run\"",
+    "test:watch": "vitest",
+    "emulators": "firebase emulators:start --only firestore --project demo-kedem --config ../firebase.json --import ../.firestore-emulator --export-on-exit"
   },
   "dependencies": {
     "@date-fns/tz": "^1.2.0",
@@ -28,9 +28,9 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.0",
     "express-static-gzip": "^3.0.0",
+    "firebase-admin": "^13.10.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.14.0",
     "nodemailer": "^7.0.0",
     "pino": "^9.7.0",
     "pino-http": "^10.5.0",
@@ -48,6 +48,7 @@
     "supertest": "^7.1.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "firebase-tools": "^15.26.0"
   }
 }

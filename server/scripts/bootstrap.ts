@@ -1,19 +1,14 @@
 /**
- * Production bootstrap: migrations, one tenant and one admin — nothing else.
- * Reads BOOTSTRAP_* from the environment; safe to re-run (skips what exists).
+ * Production bootstrap: one tenant and one admin — nothing else. Reads
+ * BOOTSTRAP_* from the environment; safe to re-run (skips what exists).
  */
 import { hashPassword } from '../src/auth/password.js'
 import { config } from '../src/config.js'
-import { closePool } from '../src/db/pool.js'
-import { migrate } from '../src/db/migrate.js'
 import { newId } from '../src/lib/ids.js'
 import { findTenantBySlug, insertTenant } from '../src/modules/tenants/repository.js'
 import { findUserRowByEmail, insertUser } from '../src/modules/users/repository.js'
 
 async function main() {
-  const applied = await migrate()
-  console.log(applied.length ? `migrations applied: ${applied.join(', ')}` : 'schema up to date')
-
   const { tenantName, tenantSlug, adminEmail, adminPassword } = config.bootstrap
   let tenant = await findTenantBySlug(tenantSlug)
   if (!tenant) {
@@ -41,10 +36,8 @@ async function main() {
 }
 
 main()
-  .then(() => closePool())
   .then(() => process.exit(0))
-  .catch(async (error) => {
+  .catch((error) => {
     console.error(error)
-    await closePool().catch(() => undefined)
     process.exit(1)
   })

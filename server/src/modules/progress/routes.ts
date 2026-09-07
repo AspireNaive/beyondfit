@@ -2,7 +2,6 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { currentUser, requireAuth } from '../../auth/middleware.js'
 import { route } from '../../lib/handler.js'
-import { newId } from '../../lib/ids.js'
 import * as repo from './repository.js'
 import { assertProgressAccess } from './service.js'
 
@@ -56,7 +55,7 @@ membersRouter.post(
   route({ params: memberParams, body: bodyMetricSchema }, async ({ params, body, req, res }) => {
     await assertProgressAccess(currentUser(req), params.memberId)
     res.status(201)
-    return repo.upsertBodyMetric({ ...body, id: newId(), memberId: params.memberId })
+    return repo.upsertBodyMetric({ ...body, memberId: params.memberId })
   }),
 )
 

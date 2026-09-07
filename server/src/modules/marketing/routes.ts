@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
-import { execute } from '../../db/pool.js'
+import { col, db, Timestamp } from '../../db/firestore.js'
 import { route } from '../../lib/handler.js'
 import { newId } from '../../lib/ids.js'
 import { logger } from '../../lib/logger.js'
@@ -35,10 +35,16 @@ contactRouter.post(
     },
     async ({ body, res }) => {
       const id = newId()
-      await execute(
-        'INSERT INTO contact_messages (id, first_name, last_name, email, phone, topic, message) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [id, body.firstName, body.lastName, body.email, body.phone || null, body.topic, body.message],
-      )
+      await db.collection(col.contactMessages).doc(id).create({
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        phone: body.phone || null,
+        topic: body.topic,
+        message: body.message,
+        createdAt: Timestamp.now(),
+        handledAt: null,
+      })
       if (config.smtp?.from) {
         sendMail({
           to: config.smtp.from,
@@ -60,10 +66,13 @@ newsletterRouter.post(
   route(
     { body: z.object({ email: z.string().trim().toLowerCase().email(), source: z.string().trim().max(40).default('footer') }) },
     async ({ body }) => {
-      await execute(
-        `INSERT INTO newsletter_subscribers (email, source) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE unsubscribed_at = NULL`,
-        [body.email, body.source],
+      const ref = db.collection(col.newsletterSubscribers).doc(body.email)
+      const existing = await ref.get()
+      await ref.set(
+        existing.exists
+          ? { unsubscribedAt: null }
+          : { email: body.email, source: body.source, createdAt: Timestamp.now(), unsubscribedAt: null },
+        { merge: true },
       )
     },
   ),

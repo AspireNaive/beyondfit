@@ -1,31 +1,34 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import type { Timestamp } from 'firebase-admin/firestore'
+import { chunk, col, db, docOf, runTransaction, Timestamp as Ts, type Tx } from '../../db/firestore.js'
 import type { Product, ProductCategory } from '../../domain.js'
+import { conflict } from '../../lib/errors.js'
 
-export interface ProductRow extends RowDataPacket {
-  id: string
-  tenant_id: string | null
+export type ProductDoc = {
+  tenantId: string | null
   slug: string
   name: string
   tagline: string
   description: string
   category: ProductCategory
-  price_minor: number
+  priceMinor: number
   currency: Product['price']['currency']
-  compare_at_minor: number | null
-  image_url: string | null
+  compareAtMinor: number | null
+  imageUrl: string | null
   accent: string
   rating: number
-  review_count: number
-  in_stock: number
+  reviewCount: number
+  inStock: boolean
   badge: string | null
-  digital: number
-  instructor_id: string | null
-  active: number
+  digital: boolean
+  instructorId: string | null
+  active: boolean
+  createdAt: Timestamp
+  updatedAt: Timestamp
 }
+export type ProductRow = ProductDoc & { id: string }
 
-const COLS = 'id, tenant_id, slug, name, tagline, description, category, price_minor, currency, compare_at_minor, image_url, accent, rating, review_count, in_stock, badge, digital, instructor_id, active'
+const products = () => db.collection(col.products)
+const slugs = () => db.collection(col.productSlugs)
 
 export const toProduct = (r: ProductRow): Product => ({
   id: r.id,
@@ -34,49 +37,60 @@ export const toProduct = (r: ProductRow): Product => ({
   tagline: r.tagline,
   description: r.description,
   category: r.category,
-  price: { amountMinor: r.price_minor, currency: r.currency },
-  ...(r.compare_at_minor != null ? { compareAtPrice: { amountMinor: r.compare_at_minor, currency: r.currency } } : {}),
-  ...(r.image_url ? { imageUrl: r.image_url } : {}),
+  price: { amountMinor: r.priceMinor, currency: r.currency },
+  ...(r.compareAtMinor != null ? { compareAtPrice: { amountMinor: r.compareAtMinor, currency: r.currency } } : {}),
+  ...(r.imageUrl ? { imageUrl: r.imageUrl } : {}),
   accent: r.accent,
-  rating: Number(r.rating),
-  reviewCount: r.review_count,
-  inStock: r.in_stock === 1,
+  rating: r.rating,
+  reviewCount: r.reviewCount,
+  inStock: r.inStock,
   ...(r.badge ? { badge: r.badge } : {}),
-  digital: r.digital === 1,
-  ...(r.instructor_id ? { instructorId: r.instructor_id } : {}),
+  digital: r.digital,
+  ...(r.instructorId ? { instructorId: r.instructorId } : {}),
 })
 
-export async function listProducts(
-  filter: { category?: ProductCategory | undefined; query?: string | undefined; includeInactive?: boolean },
-  db: Db = pool,
-): Promise<Product[]> {
-  const clauses: string[] = filter.includeInactive ? [] : ['active = 1']
-  const params: unknown[] = []
-  if (filter.category) {
-    clauses.push('category = ?')
-    params.push(filter.category)
-  }
+const byCreated = (a: ProductRow, b: ProductRow) => a.createdAt.toMillis() - b.createdAt.toMillis() || a.id.localeCompare(b.id)
+
+export async function listProducts(filter: {
+  category?: ProductCategory | undefined
+  query?: string | undefined
+  includeInactive?: boolean
+}): Promise<Product[]> {
+  let q: FirebaseFirestore.Query = products()
+  if (!filter.includeInactive) q = q.where('active', '==', true)
+  if (filter.category) q = q.where('category', '==', filter.category)
+  let rows = (await q.get()).docs.map((d) => docOf<ProductDoc>(d)!)
   if (filter.query) {
-    clauses.push('(name LIKE ? OR tagline LIKE ?)')
-    const like = `%${filter.query.replace(/[%_]/g, '\\$&')}%`
-    params.push(like, like)
+    const needle = filter.query.toLowerCase()
+    rows = rows.filter((p) => p.name.toLowerCase().includes(needle) || p.tagline.toLowerCase().includes(needle))
   }
-  const rows = await query<ProductRow>(
-    `SELECT ${COLS} FROM products${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY created_at, id`,
-    params,
-    db,
-  )
-  return rows.map(toProduct)
+  return rows.sort(byCreated).map(toProduct)
 }
 
-export async function findProductBySlug(slug: string, db: Db = pool): Promise<Product | null> {
-  const row = await queryOne<ProductRow>(`SELECT ${COLS} FROM products WHERE slug = ? AND active = 1`, [slug], db)
+export async function findProductBySlug(slug: string): Promise<Product | null> {
+  const snap = await products().where('slug', '==', slug).where('active', '==', true).limit(1).get()
+  const doc = snap.docs[0]
+  return doc ? toProduct(docOf<ProductDoc>(doc)!) : null
+}
+
+export async function findProductById(id: string): Promise<Product | null> {
+  const row = docOf<ProductDoc>(await products().doc(id).get())
   return row ? toProduct(row) : null
 }
 
-export async function findProductRowsByIds(ids: readonly string[], db: Db = pool): Promise<ProductRow[]> {
+/** Active products for the given ids, in one round trip per 100 ids. */
+export async function findProductRowsByIds(ids: readonly string[], tx?: Tx): Promise<ProductRow[]> {
   if (ids.length === 0) return []
-  return query<ProductRow>(`SELECT ${COLS} FROM products WHERE id IN (${ids.map(() => '?').join(',')}) AND active = 1`, ids, db)
+  const rows: ProductRow[] = []
+  for (const part of chunk(ids, 100)) {
+    const refs = part.map((id) => products().doc(id))
+    const snaps = tx ? await tx.getAll(...refs) : await db.getAll(...refs)
+    for (const s of snaps) {
+      const row = docOf<ProductDoc>(s)
+      if (row?.active) rows.push(row)
+    }
+  }
+  return rows
 }
 
 export type NewProduct = {
@@ -100,42 +114,53 @@ export type NewProduct = {
   instructorId?: string | null
 }
 
-export async function insertProduct(p: NewProduct, db: Db = pool) {
-  await execute(
-    `INSERT INTO products (id, tenant_id, slug, name, tagline, description, category, price_minor, currency, compare_at_minor, image_url, accent, rating, review_count, in_stock, badge, digital, instructor_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      p.id, p.tenantId ?? null, p.slug, p.name, p.tagline ?? '', p.description, p.category, p.priceMinor, p.currency ?? 'USD',
-      p.compareAtMinor ?? null, p.imageUrl ?? null, p.accent ?? '#b6ef21', p.rating ?? 0, p.reviewCount ?? 0,
-      p.inStock === false ? 0 : 1, p.badge ?? null, p.digital ? 1 : 0, p.instructorId ?? null,
-    ],
-    db,
-  )
+/** Creates the product and reserves its slug atomically. */
+export async function insertProduct(p: NewProduct): Promise<void> {
+  const now = Ts.now()
+  const doc: ProductDoc = {
+    tenantId: p.tenantId ?? null,
+    slug: p.slug,
+    name: p.name,
+    tagline: p.tagline ?? '',
+    description: p.description,
+    category: p.category,
+    priceMinor: p.priceMinor,
+    currency: (p.currency ?? 'USD') as ProductDoc['currency'],
+    compareAtMinor: p.compareAtMinor ?? null,
+    imageUrl: p.imageUrl ?? null,
+    accent: p.accent ?? '#b6ef21',
+    rating: p.rating ?? 0,
+    reviewCount: p.reviewCount ?? 0,
+    inStock: p.inStock !== false,
+    badge: p.badge ?? null,
+    digital: p.digital ?? false,
+    instructorId: p.instructorId ?? null,
+    active: true,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await runTransaction(async (tx) => {
+    if ((await tx.get(slugs().doc(p.slug))).exists) throw conflict('A product with that slug already exists.')
+    tx.create(slugs().doc(p.slug), { productId: p.id })
+    tx.create(products().doc(p.id), doc)
+  })
 }
 
 export type ProductPatch = Partial<Omit<NewProduct, 'id'>> & { active?: boolean }
 
-const PATCH_COLUMNS: Record<string, string> = {
-  tenantId: 'tenant_id', slug: 'slug', name: 'name', tagline: 'tagline', description: 'description', category: 'category',
-  priceMinor: 'price_minor', currency: 'currency', compareAtMinor: 'compare_at_minor', imageUrl: 'image_url', accent: 'accent',
-  rating: 'rating', reviewCount: 'review_count', inStock: 'in_stock', badge: 'badge', digital: 'digital', instructorId: 'instructor_id', active: 'active',
-}
-
-export async function updateProduct(id: string, patch: ProductPatch, db: Db = pool) {
-  const sets: string[] = []
-  const params: unknown[] = []
-  for (const [key, value] of Object.entries(patch)) {
-    const column = PATCH_COLUMNS[key]
-    if (!column || value === undefined) continue
-    sets.push(`${column} = ?`)
-    params.push(typeof value === 'boolean' ? (value ? 1 : 0) : value)
-  }
-  if (!sets.length) return
-  params.push(id)
-  await execute(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`, params, db)
-}
-
-export async function findProductById(id: string, db: Db = pool): Promise<Product | null> {
-  const row = await queryOne<ProductRow>(`SELECT ${COLS} FROM products WHERE id = ?`, [id], db)
-  return row ? toProduct(row) : null
+export async function updateProduct(id: string, patch: ProductPatch): Promise<void> {
+  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+  if (Object.keys(clean).length === 0) return
+  await runTransaction(async (tx) => {
+    const ref = products().doc(id)
+    const current = docOf<ProductDoc>(await tx.get(ref))
+    if (!current) return
+    const nextSlug = typeof clean.slug === 'string' ? clean.slug : null
+    if (nextSlug && nextSlug !== current.slug) {
+      if ((await tx.get(slugs().doc(nextSlug))).exists) throw conflict('A product with that slug already exists.')
+      tx.delete(slugs().doc(current.slug))
+      tx.create(slugs().doc(nextSlug), { productId: id })
+    }
+    tx.update(ref, { ...clean, updatedAt: Ts.now() })
+  })
 }

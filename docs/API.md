@@ -49,9 +49,8 @@ end can render its own empty state; they are flagged in the tables.
   `out_of_stock`, `payment_failed`, `already_subscribed`, `validation`.
 - `errors` maps a dotted field path (or `_`) to messages. It is present on
   every 422 schema failure and on some 422 business-rule failures.
-- Schema validation (zod) is 422. Malformed JSON is 400. A MySQL duplicate key
-  surfaces as 409 `That record already exists.` Anything unexpected is a 500
-  `Something went wrong.`
+- Schema validation (zod) is 422. Malformed JSON is 400. A duplicate key (email, product slug, booking slot) is 409.
+  Anything unexpected is a 500 `Something went wrong.`
 
 **Rate limits** (per IP, 15-minute window, `express-rate-limit`):
 

@@ -1,6 +1,6 @@
 import { createApp } from './app.js'
 import { config } from './config.js'
-import { closePool, pool } from './db/pool.js'
+import { ping } from './db/firestore.js'
 import { logger } from './lib/logger.js'
 
 /**
@@ -8,8 +8,11 @@ import { logger } from './lib/logger.js'
  * supplies PORT), pm2 on a VPS, or `node dist/index.js` anywhere.
  */
 async function main() {
-  await pool.query('SELECT 1')
-  logger.info({ host: config.db.host, database: config.db.database }, 'database reachable')
+  await ping()
+  logger.info(
+    { project: config.firebase.projectId, emulator: config.firebase.emulatorHost ?? null },
+    'firestore reachable',
+  )
 
   const app = createApp()
   const onListening = () =>
@@ -18,10 +21,7 @@ async function main() {
 
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down')
-    server.close(async () => {
-      await closePool().catch(() => undefined)
-      process.exit(0)
-    })
+    server.close(() => process.exit(0))
     setTimeout(() => process.exit(1), 10_000).unref()
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'))

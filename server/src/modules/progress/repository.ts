@@ -1,117 +1,71 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import { col, db, docOf, Timestamp as Ts } from '../../db/firestore.js'
 import type { ActivityEntry, BodyMetricEntry, MemberGoal } from '../../domain.js'
 
-interface MetricRow extends RowDataPacket {
-  id: string
-  member_id: string
-  recorded_on: string
-  weight_kg: number
-  height_cm: number
-  body_fat_percent: number | null
-  resting_heart_rate: number | null
-  waist_cm: number | null
+/** Document ids are `${memberId}_${day}`, which makes same-day logging an overwrite. */
+const metricId = (memberId: string, day: string) => `${memberId}_${day}`
+
+type MetricDoc = Omit<BodyMetricEntry, 'id' | 'bodyFatPercent' | 'restingHeartRate' | 'waistCm' | 'note'> & {
+  bodyFatPercent: number | null
+  restingHeartRate: number | null
+  waistCm: number | null
   note: string | null
 }
 
-const toMetric = (r: MetricRow): BodyMetricEntry => ({
-  id: r.id,
-  memberId: r.member_id,
-  recordedOn: r.recorded_on,
-  weightKg: Number(r.weight_kg),
-  heightCm: Number(r.height_cm),
-  ...(r.body_fat_percent != null ? { bodyFatPercent: Number(r.body_fat_percent) } : {}),
-  ...(r.resting_heart_rate != null ? { restingHeartRate: r.resting_heart_rate } : {}),
-  ...(r.waist_cm != null ? { waistCm: Number(r.waist_cm) } : {}),
-  ...(r.note ? { note: r.note } : {}),
+const metrics = () => db.collection(col.bodyMetrics)
+const activity = () => db.collection(col.activity)
+const goals = () => db.collection(col.goals)
+
+const toMetric = (id: string, d: MetricDoc): BodyMetricEntry => ({
+  id,
+  memberId: d.memberId,
+  recordedOn: d.recordedOn,
+  weightKg: d.weightKg,
+  heightCm: d.heightCm,
+  ...(d.bodyFatPercent != null ? { bodyFatPercent: d.bodyFatPercent } : {}),
+  ...(d.restingHeartRate != null ? { restingHeartRate: d.restingHeartRate } : {}),
+  ...(d.waistCm != null ? { waistCm: d.waistCm } : {}),
+  ...(d.note ? { note: d.note } : {}),
 })
 
-const METRIC_COLS = 'id, member_id, recorded_on, weight_kg, height_cm, body_fat_percent, resting_heart_rate, waist_cm, note'
+export async function listBodyMetrics(memberId: string): Promise<BodyMetricEntry[]> {
+  const snap = await metrics().where('memberId', '==', memberId).orderBy('recordedOn').get()
+  return snap.docs.map((d) => toMetric(d.id, d.data() as MetricDoc))
+}
 
-export async function listBodyMetrics(memberId: string, db: Db = pool): Promise<BodyMetricEntry[]> {
-  const rows = await query<MetricRow>(`SELECT ${METRIC_COLS} FROM body_metrics WHERE member_id = ? ORDER BY recorded_on`, [memberId], db)
-  return rows.map(toMetric)
+export function metricDoc(entry: Omit<BodyMetricEntry, 'id'>): { id: string; data: MetricDoc } {
+  return {
+    id: metricId(entry.memberId, entry.recordedOn),
+    data: {
+      memberId: entry.memberId,
+      recordedOn: entry.recordedOn,
+      weightKg: entry.weightKg,
+      heightCm: entry.heightCm,
+      bodyFatPercent: entry.bodyFatPercent ?? null,
+      restingHeartRate: entry.restingHeartRate ?? null,
+      waistCm: entry.waistCm ?? null,
+      note: entry.note ?? null,
+    },
+  }
 }
 
 /** Same-day re-logging overwrites rather than creating a duplicate point. */
-export async function upsertBodyMetric(entry: Omit<BodyMetricEntry, 'id'> & { id: string }, db: Db = pool): Promise<BodyMetricEntry> {
-  await execute(
-    `INSERT INTO body_metrics (id, member_id, recorded_on, weight_kg, height_cm, body_fat_percent, resting_heart_rate, waist_cm, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE weight_kg = VALUES(weight_kg), height_cm = VALUES(height_cm), body_fat_percent = VALUES(body_fat_percent),
-       resting_heart_rate = VALUES(resting_heart_rate), waist_cm = VALUES(waist_cm), note = VALUES(note)`,
-    [
-      entry.id, entry.memberId, entry.recordedOn, entry.weightKg, entry.heightCm,
-      entry.bodyFatPercent ?? null, entry.restingHeartRate ?? null, entry.waistCm ?? null, entry.note ?? null,
-    ],
-    db,
-  )
-  const row = await queryOne<MetricRow>(`SELECT ${METRIC_COLS} FROM body_metrics WHERE member_id = ? AND recorded_on = ?`, [entry.memberId, entry.recordedOn], db)
-  return toMetric(row!)
+export async function upsertBodyMetric(entry: Omit<BodyMetricEntry, 'id'>): Promise<BodyMetricEntry> {
+  const { id, data } = metricDoc(entry)
+  await metrics().doc(id).set({ ...data, updatedAt: Ts.now() })
+  return toMetric(id, data)
 }
 
-interface ActivityRow extends RowDataPacket {
-  member_id: string
-  date: string
-  steps: number
-  active_minutes: number
-  calories_burned: number
-  calories_consumed: number
-  protein_grams: number
-  water_ml: number
-  sleep_hours: number
-  workouts: number
+export async function listActivity(memberId: string, days: number): Promise<ActivityEntry[]> {
+  // Newest `days` rows, returned oldest-first — what the charts expect.
+  const snap = await activity().where('memberId', '==', memberId).orderBy('date', 'desc').limit(days).get()
+  return snap.docs.map((d) => d.data() as ActivityEntry).reverse()
 }
 
-const toActivity = (r: ActivityRow): ActivityEntry => ({
-  memberId: r.member_id,
-  date: r.date,
-  steps: r.steps,
-  activeMinutes: r.active_minutes,
-  caloriesBurned: r.calories_burned,
-  caloriesConsumed: r.calories_consumed,
-  proteinGrams: r.protein_grams,
-  waterMl: r.water_ml,
-  sleepHours: Number(r.sleep_hours),
-  workouts: r.workouts,
-})
+export const activityId = (e: Pick<ActivityEntry, 'memberId' | 'date'>) => `${e.memberId}_${e.date}`
 
-export async function listActivity(memberId: string, days: number, db: Db = pool): Promise<ActivityEntry[]> {
-  // Newest `days` rows, returned oldest-first — matches the chart's expectation.
-  const rows = await query<ActivityRow>(
-    `SELECT * FROM (SELECT member_id, \`date\`, steps, active_minutes, calories_burned, calories_consumed, protein_grams, water_ml, sleep_hours, workouts
-                    FROM activity_entries WHERE member_id = ? ORDER BY \`date\` DESC LIMIT ?) recent ORDER BY \`date\``,
-    [memberId, days],
-    db,
-  )
-  return rows.map(toActivity)
-}
-
-export async function upsertActivity(entry: ActivityEntry, db: Db = pool): Promise<ActivityEntry> {
-  await execute(
-    `INSERT INTO activity_entries (member_id, \`date\`, steps, active_minutes, calories_burned, calories_consumed, protein_grams, water_ml, sleep_hours, workouts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE steps = VALUES(steps), active_minutes = VALUES(active_minutes), calories_burned = VALUES(calories_burned),
-       calories_consumed = VALUES(calories_consumed), protein_grams = VALUES(protein_grams), water_ml = VALUES(water_ml),
-       sleep_hours = VALUES(sleep_hours), workouts = VALUES(workouts)`,
-    [
-      entry.memberId, entry.date, entry.steps, entry.activeMinutes, entry.caloriesBurned, entry.caloriesConsumed,
-      entry.proteinGrams, entry.waterMl, entry.sleepHours, entry.workouts,
-    ],
-    db,
-  )
+export async function upsertActivity(entry: ActivityEntry): Promise<ActivityEntry> {
+  await activity().doc(activityId(entry)).set({ ...entry, updatedAt: Ts.now() })
   return entry
-}
-
-interface GoalRow extends RowDataPacket {
-  member_id: string
-  target_weight_kg: number | null
-  daily_calorie_target: number
-  daily_protein_target: number
-  daily_step_target: number
-  weekly_workout_target: number
-  focus: string
 }
 
 export const DEFAULT_GOAL = (memberId: string): MemberGoal => ({
@@ -123,29 +77,17 @@ export const DEFAULT_GOAL = (memberId: string): MemberGoal => ({
   focus: 'General health',
 })
 
-export async function getGoal(memberId: string, db: Db = pool): Promise<MemberGoal> {
-  const r = await queryOne<GoalRow>('SELECT * FROM member_goals WHERE member_id = ?', [memberId], db)
-  if (!r) return DEFAULT_GOAL(memberId)
-  return {
-    memberId: r.member_id,
-    ...(r.target_weight_kg != null ? { targetWeightKg: Number(r.target_weight_kg) } : {}),
-    dailyCalorieTarget: r.daily_calorie_target,
-    dailyProteinTarget: r.daily_protein_target,
-    dailyStepTarget: r.daily_step_target,
-    weeklyWorkoutTarget: r.weekly_workout_target,
-    focus: r.focus,
-  }
+type GoalDoc = Omit<MemberGoal, 'targetWeightKg'> & { targetWeightKg: number | null }
+
+export async function getGoal(memberId: string): Promise<MemberGoal> {
+  const row = docOf<GoalDoc>(await goals().doc(memberId).get())
+  if (!row) return DEFAULT_GOAL(memberId)
+  const { targetWeightKg, ...rest } = row
+  return { ...rest, memberId, ...(targetWeightKg != null ? { targetWeightKg } : {}) }
 }
 
-export async function upsertGoal(goal: MemberGoal, db: Db = pool): Promise<MemberGoal> {
-  await execute(
-    `INSERT INTO member_goals (member_id, target_weight_kg, daily_calorie_target, daily_protein_target, daily_step_target, weekly_workout_target, focus)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE target_weight_kg = VALUES(target_weight_kg), daily_calorie_target = VALUES(daily_calorie_target),
-       daily_protein_target = VALUES(daily_protein_target), daily_step_target = VALUES(daily_step_target),
-       weekly_workout_target = VALUES(weekly_workout_target), focus = VALUES(focus)`,
-    [goal.memberId, goal.targetWeightKg ?? null, goal.dailyCalorieTarget, goal.dailyProteinTarget, goal.dailyStepTarget, goal.weeklyWorkoutTarget, goal.focus],
-    db,
-  )
-  return getGoal(goal.memberId, db)
+export async function upsertGoal(goal: MemberGoal): Promise<MemberGoal> {
+  const doc: GoalDoc = { ...goal, targetWeightKg: goal.targetWeightKg ?? null }
+  await goals().doc(goal.memberId).set({ ...doc, updatedAt: Ts.now() })
+  return getGoal(goal.memberId)
 }

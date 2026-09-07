@@ -1,15 +1,16 @@
 /**
  * Demo seed — loads the same deterministic fixtures the front end's mock
- * adapter used (src/infrastructure/mock/seed.ts) into MySQL, so the app looks
- * identical after the switch to real data. Every demo account's password is
- * DEMO_PASSWORD ("kedemlife").
+ * adapter used (src/infrastructure/mock/seed.ts) into Firestore, so the app
+ * looks identical after the switch to real data. Every demo account's
+ * password is DEMO_PASSWORD ("kedemlife").
  *
- *   npm run db:seed            # adds rows (fails on duplicates)
- *   npm run db:seed -- --reset # empties every table first
+ *   npm run db:seed            # adds documents (fails on duplicates)
+ *   npm run db:seed -- --reset # empties every collection first
  *
- * For a production studio use `npm run db:bootstrap` instead: one tenant, one
- * admin, no demo people.
+ * Point it at the emulator (FIRESTORE_EMULATOR_HOST) or at the real project
+ * (FIREBASE_SERVICE_ACCOUNT). For a production studio use `db:bootstrap`.
  */
+import { fileURLToPath } from 'node:url'
 import {
   ACTIVITY,
   APPOINTMENTS,
@@ -25,23 +26,16 @@ import {
   USERS,
 } from '@/infrastructure/mock/seed'
 import { hashPassword } from '../src/auth/password.js'
-import { closePool, execute, pool } from '../src/db/pool.js'
-import { migrate } from '../src/db/migrate.js'
+import { col, db, deleteEverything, Timestamp } from '../src/db/firestore.js'
+import { HttpError } from '../src/lib/errors.js'
 import { newId } from '../src/lib/ids.js'
 import { insertAppointment } from '../src/modules/appointments/repository.js'
 import { insertProduct } from '../src/modules/catalog/repository.js'
-import { insertOrder, insertPayment, insertSubscription } from '../src/modules/orders/repository.js'
-import { upsertActivity, upsertBodyMetric, upsertGoal } from '../src/modules/progress/repository.js'
-import { insertHours, insertProvider } from '../src/modules/providers/repository.js'
+import { insertOrder, insertSubscription, paymentDoc } from '../src/modules/orders/repository.js'
+import { activityId, metricDoc } from '../src/modules/progress/repository.js'
+import { insertProvider, setHours } from '../src/modules/providers/repository.js'
 import { insertTenant } from '../src/modules/tenants/repository.js'
 import { insertUser } from '../src/modules/users/repository.js'
-
-const TABLES = [
-  'refresh_tokens', 'password_reset_tokens', 'contact_messages', 'newsletter_subscribers',
-  'subscriptions', 'payments', 'order_lines', 'orders', 'products',
-  'member_goals', 'activity_entries', 'body_metrics', 'appointments',
-  'provider_time_off', 'provider_hours', 'providers', 'users', 'tenants',
-]
 
 /** Mon–Fri 07:00–19:00, Sat–Sun 07:00–14:00 — the hours the mock implied. */
 const DEFAULT_HOURS = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
@@ -50,24 +44,22 @@ const DEFAULT_HOURS = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
   endMinute: weekday === 0 || weekday === 6 ? 14 * 60 : 19 * 60,
 }))
 
-async function reset() {
-  await execute('SET FOREIGN_KEY_CHECKS = 0')
-  for (const table of TABLES) await execute(`TRUNCATE TABLE ${table}`)
-  await execute('SET FOREIGN_KEY_CHECKS = 1')
-}
+const log = (line: string) => console.log(line)
 
-export async function seed(options: { reset?: boolean } = {}) {
-  await migrate()
+export async function seed(options: { reset?: boolean } = {}): Promise<void> {
   if (options.reset) {
-    await reset()
-    console.log('tables emptied')
+    await deleteEverything()
+    log('collections emptied')
   }
 
   for (const t of TENANTS) {
-    // TENANTS[0] is the studio every demo person belongs to.
-    await insertTenant({ id: t.id, name: t.name, slug: t.slug, plan: t.plan, seats: t.seats, primaryColor: t.primaryColor ?? null, isDefault: t === TENANTS[0], createdAt: t.createdAt })
+    await insertTenant({
+      id: t.id, name: t.name, slug: t.slug, plan: t.plan, seats: t.seats, primaryColor: t.primaryColor ?? null,
+      // TENANTS[0] is the studio every demo person belongs to.
+      isDefault: t === TENANTS[0], createdAt: t.createdAt,
+    })
   }
-  console.log(`tenants: ${TENANTS.length}`)
+  log(`tenants: ${TENANTS.length}`)
 
   const passwordHash = await hashPassword(DEMO_PASSWORD)
   for (const u of USERS) {
@@ -75,23 +67,19 @@ export async function seed(options: { reset?: boolean } = {}) {
       id: u.id, tenantId: u.tenantId, role: u.role, firstName: u.firstName, lastName: u.lastName, email: u.email,
       passwordHash, phone: u.phone ?? null, title: u.title ?? null, bio: u.bio ?? null, location: u.location ?? null,
       joinedAt: u.joinedAt, specialties: u.specialties ?? null, credentials: u.credentials ?? null,
-      rating: u.rating ?? null, sessionsDelivered: u.sessionsDelivered ?? null, assignedCoachId: null, status: u.status,
+      rating: u.rating ?? null, sessionsDelivered: u.sessionsDelivered ?? null, assignedCoachId: u.assignedCoachId ?? null, status: u.status,
     })
   }
-  // Coach assignments reference other users, so they land in a second pass.
-  for (const u of USERS) {
-    if (u.assignedCoachId) await execute('UPDATE users SET assigned_coach_id = ? WHERE id = ?', [u.assignedCoachId, u.id])
-  }
-  console.log(`users: ${USERS.length}`)
+  log(`users: ${USERS.length}`)
 
   for (const p of PROVIDERS) {
     await insertProvider({
       userId: p.id, discipline: p.discipline, reviewCount: p.reviewCount, sessionRateMinor: p.sessionRate.amountMinor,
       currency: p.sessionRate.currency, channels: p.channels, timezone: p.timezone, slotMinutes: 60,
     })
-    await insertHours(p.id, DEFAULT_HOURS)
+    await setHours(p.id, DEFAULT_HOURS)
   }
-  console.log(`providers: ${PROVIDERS.length}`)
+  log(`providers: ${PROVIDERS.length}`)
 
   let appointments = 0
   let skipped = 0
@@ -99,26 +87,31 @@ export async function seed(options: { reset?: boolean } = {}) {
     const member = USERS.find((u) => u.id === a.memberId)!
     try {
       await insertAppointment({
-        id: a.id, tenantId: member.tenantId, memberId: a.memberId, providerId: a.providerId, discipline: a.discipline,
-        channel: a.channel, startsAt: new Date(a.startsAt), durationMinutes: a.durationMinutes, status: a.status,
-        priceMinor: a.price.amountMinor, currency: a.price.currency, joinUrl: a.joinUrl ?? null, notes: a.notes || null,
-        memberGoal: a.memberGoal ?? null, createdAt: new Date(a.createdAt),
+        id: a.id, tenantId: member.tenantId, memberId: a.memberId, memberName: a.memberName, providerId: a.providerId,
+        providerName: a.providerName, discipline: a.discipline, channel: a.channel, startsAt: new Date(a.startsAt),
+        durationMinutes: a.durationMinutes, status: a.status, priceMinor: a.price.amountMinor, currency: a.price.currency,
+        joinUrl: a.joinUrl ?? null, notes: a.notes || null, memberGoal: a.memberGoal ?? null, createdAt: new Date(a.createdAt),
       })
       appointments++
     } catch (error) {
-      // The random fixtures can double-book a slot; the schema (rightly) refuses.
-      if ((error as { code?: string }).code === 'ER_DUP_ENTRY') skipped++
+      // The random fixtures can double-book a slot; the slot lock (rightly) refuses.
+      if (error instanceof HttpError && error.code === 'slot_taken') skipped++
       else throw error
     }
   }
-  console.log(`appointments: ${appointments} (${skipped} clashing fixtures skipped)`)
+  log(`appointments: ${appointments} (${skipped} clashing fixtures skipped)`)
 
-  for (const m of BODY_METRICS) await upsertBodyMetric({ ...m, id: m.id })
-  console.log(`body metrics: ${BODY_METRICS.length}`)
-  for (const a of ACTIVITY) await upsertActivity(a)
-  console.log(`activity days: ${ACTIVITY.length}`)
-  for (const g of GOALS) await upsertGoal(g)
-  console.log(`goals: ${GOALS.length}`)
+  const writer = db.bulkWriter()
+  for (const m of BODY_METRICS) {
+    const { id, data } = metricDoc(m)
+    writer.set(db.collection(col.bodyMetrics).doc(id), { ...data, updatedAt: Timestamp.now() })
+  }
+  for (const a of ACTIVITY) writer.set(db.collection(col.activity).doc(activityId(a)), { ...a, updatedAt: Timestamp.now() })
+  for (const g of GOALS) {
+    writer.set(db.collection(col.goals).doc(g.memberId), { ...g, targetWeightKg: g.targetWeightKg ?? null, updatedAt: Timestamp.now() })
+  }
+  await writer.close()
+  log(`body metrics: ${BODY_METRICS.length}, activity days: ${ACTIVITY.length}, goals: ${GOALS.length}`)
 
   for (const p of PRODUCTS) {
     await insertProduct({
@@ -128,61 +121,57 @@ export async function seed(options: { reset?: boolean } = {}) {
       badge: p.badge ?? null, digital: p.digital, instructorId: p.instructorId ?? null,
     })
   }
-  console.log(`products: ${PRODUCTS.length}`)
+  log(`products: ${PRODUCTS.length}`)
 
-  const conn = await pool.getConnection()
-  try {
-    for (const o of [...ORDERS].reverse()) {
-      const customer = USERS.find((u) => u.id === o.customerId)!
-      await insertOrder(
-        {
-          id: o.id, tenantId: customer.tenantId, customerId: o.customerId, customerName: o.customerName, customerEmail: o.customerEmail,
-          subtotalMinor: o.subtotal.amountMinor, shippingMinor: o.shipping.amountMinor, taxMinor: o.tax.amountMinor,
-          totalMinor: o.total.amountMinor, currency: o.total.currency, status: o.status, placedAt: new Date(o.placedAt),
-          trackingNumber: o.trackingNumber ?? null,
-          lines: o.lines.map((l) => ({ productId: l.productId, name: l.name, quantity: l.quantity, unitPriceMinor: l.unitPrice.amountMinor, currency: l.unitPrice.currency, instructorId: l.instructorId ?? null })),
-        },
-        conn,
-      )
-    }
-  } finally {
-    conn.release()
-  }
-  console.log(`orders: ${ORDERS.length}`)
-
-  for (const p of PAYMENTS) {
-    const customer = USERS.find((u) => u.id === p.customerId)!
-    await insertPayment({
-      id: p.id, tenantId: customer.tenantId, reference: p.reference, orderId: p.orderId ?? null, customerId: p.customerId,
-      customerName: p.customerName, description: p.description, grossMinor: p.gross.amountMinor, feeMinor: p.fee.amountMinor,
-      currency: p.gross.currency, method: p.method, cardLast4: p.cardLast4 ?? null, cardBrand: p.cardBrand ?? null,
-      status: p.status, provider: 'seed', processedAt: new Date(p.processedAt), payoutId: p.payoutId ?? null,
+  // Oldest first so order numbers ascend with time.
+  for (const o of [...ORDERS].reverse()) {
+    const customer = USERS.find((u) => u.id === o.customerId)!
+    await insertOrder({
+      id: o.id, tenantId: customer.tenantId, customerId: o.customerId, customerName: o.customerName, customerEmail: o.customerEmail,
+      subtotalMinor: o.subtotal.amountMinor, shippingMinor: o.shipping.amountMinor, taxMinor: o.tax.amountMinor,
+      totalMinor: o.total.amountMinor, currency: o.total.currency, status: o.status, placedAt: new Date(o.placedAt),
+      trackingNumber: o.trackingNumber ?? null,
+      lines: o.lines.map((l) => ({ productId: l.productId, name: l.name, quantity: l.quantity, unitPriceMinor: l.unitPrice.amountMinor, currency: l.unitPrice.currency, instructorId: l.instructorId ?? null })),
     })
   }
-  console.log(`payments: ${PAYMENTS.length}`)
+  log(`orders: ${ORDERS.length}`)
+
+  const payWriter = db.bulkWriter()
+  for (const p of PAYMENTS) {
+    const customer = USERS.find((u) => u.id === p.customerId)!
+    payWriter.create(
+      db.collection(col.payments).doc(p.id),
+      paymentDoc({
+        id: p.id, tenantId: customer.tenantId, reference: p.reference, orderId: p.orderId ?? null, customerId: p.customerId,
+        customerName: p.customerName, description: p.description, grossMinor: p.gross.amountMinor, feeMinor: p.fee.amountMinor,
+        currency: p.gross.currency, method: p.method, cardLast4: p.cardLast4 ?? null, cardBrand: p.cardBrand ?? null,
+        status: p.status, provider: 'seed', processedAt: new Date(p.processedAt), payoutId: p.payoutId ?? null,
+      }),
+    )
+  }
+  await payWriter.close()
+  log(`payments: ${PAYMENTS.length}`)
 
   for (const s of SUBSCRIPTIONS) {
     const member = USERS.find((u) => u.id === s.memberId)!
     await insertSubscription({
-      id: newId(), tenantId: member.tenantId, memberId: s.memberId, productId: 'p-9', planName: s.planName,
-      priceMinor: s.price.amountMinor, currency: s.price.currency, interval: s.interval, status: s.status,
-      startedAt: new Date(s.startedAt), renewsAt: new Date(s.renewsAt),
+      id: newId(), tenantId: member.tenantId, memberId: s.memberId, memberName: s.memberName, productId: 'p-9',
+      planName: s.planName, priceMinor: s.price.amountMinor, currency: s.price.currency, interval: s.interval,
+      status: s.status, startedAt: new Date(s.startedAt), renewsAt: new Date(s.renewsAt),
     })
   }
-  console.log(`subscriptions: ${SUBSCRIPTIONS.length}`)
+  log(`subscriptions: ${SUBSCRIPTIONS.length}`)
 }
 
-const isDirectRun = process.argv[1] && (await import('node:url')).fileURLToPath(import.meta.url) === process.argv[1]
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
 if (isDirectRun) {
   seed({ reset: process.argv.includes('--reset') })
-    .then(() => closePool())
     .then(() => {
       console.log('seed complete')
       process.exit(0)
     })
-    .catch(async (error) => {
+    .catch((error) => {
       console.error(error)
-      await closePool().catch(() => undefined)
       process.exit(1)
     })
 }

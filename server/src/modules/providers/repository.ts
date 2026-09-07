@@ -1,103 +1,96 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import type { Timestamp } from 'firebase-admin/firestore'
+import { col, db, docOf, Timestamp as Ts } from '../../db/firestore.js'
 import type { Discipline, MeetingChannel, Provider } from '../../domain.js'
-import { parseJsonColumn } from '../../lib/json.js'
+import type { UserDoc } from '../users/repository.js'
 
-export interface ProviderRow extends RowDataPacket {
+export type Hours = { weekday: number; startMinute: number; endMinute: number }
+export type TimeOff = { startsAt: Timestamp; endsAt: Timestamp; reason: string | null }
+
+/** providers/{userId}: the bookable half of a coach/clinician; the person is users/{userId}. */
+export type ProviderDoc = {
+  discipline: Discipline
+  reviewCount: number
+  sessionRateMinor: number
+  currency: Provider['sessionRate']['currency']
+  channels: MeetingChannel[]
+  timezone: string
+  slotMinutes: number
+  acceptingBookings: boolean
+  hours: Hours[]
+  timeOff: TimeOff[]
+}
+
+/** Provider + the user fields the API exposes, joined in code. */
+export type ProviderRow = ProviderDoc & {
   id: string
-  tenant_id: string
-  first_name: string
-  last_name: string
-  avatar_url: string | null
+  tenantId: string
+  firstName: string
+  lastName: string
+  avatarUrl: string | null
   phone: string | null
   title: string | null
   bio: string | null
-  credentials: unknown
+  credentials: string[]
   rating: number | null
-  discipline: Discipline
-  review_count: number
-  session_rate_minor: number
-  currency: Provider['sessionRate']['currency']
-  channels: unknown
-  timezone: string
-  slot_minutes: number
-  accepting_bookings: number
+  status: UserDoc['status']
 }
 
-const SELECT = `
-  SELECT u.id, u.tenant_id, u.first_name, u.last_name, u.avatar_url, u.phone, u.title, u.bio, u.credentials, u.rating,
-         p.discipline, p.review_count, p.session_rate_minor, p.currency, p.channels, p.timezone, p.slot_minutes, p.accepting_bookings
-  FROM providers p
-  JOIN users u ON u.id = p.user_id`
+const providers = () => db.collection(col.providers)
+const users = () => db.collection(col.users)
+
+function join(providerId: string, p: ProviderDoc, u: UserDoc | null): ProviderRow | null {
+  if (!u || u.status !== 'active') return null
+  return {
+    id: providerId,
+    ...p,
+    tenantId: u.tenantId,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    avatarUrl: u.avatarUrl,
+    phone: u.phone,
+    title: u.title,
+    bio: u.bio,
+    credentials: u.credentials ?? [],
+    rating: u.rating,
+    status: u.status,
+  }
+}
 
 export function toProvider(row: ProviderRow): Provider {
   return {
     id: row.id,
-    name: `${row.first_name} ${row.last_name}`.trim(),
-    avatarUrl: row.avatar_url,
+    name: `${row.firstName} ${row.lastName}`.trim(),
+    avatarUrl: row.avatarUrl,
     discipline: row.discipline,
     title: row.title ?? 'Coach',
     bio: row.bio ?? '',
-    credentials: parseJsonColumn<string[]>(row.credentials, []),
-    rating: Number(row.rating ?? 0),
-    reviewCount: row.review_count,
-    sessionRate: { amountMinor: row.session_rate_minor, currency: row.currency },
-    channels: parseJsonColumn<MeetingChannel[]>(row.channels, []),
+    credentials: row.credentials,
+    rating: row.rating ?? 0,
+    reviewCount: row.reviewCount,
+    sessionRate: { amountMinor: row.sessionRateMinor, currency: row.currency },
+    channels: row.channels,
     timezone: row.timezone,
   }
 }
 
-export async function listProviderRows(filter: { discipline?: Discipline | undefined }, db: Db = pool) {
-  const clauses = ["u.status = 'active'", 'p.accepting_bookings = 1']
-  const params: unknown[] = []
-  if (filter.discipline) {
-    clauses.push('p.discipline = ?')
-    params.push(filter.discipline)
-  }
-  return query<ProviderRow>(`${SELECT} WHERE ${clauses.join(' AND ')} ORDER BY u.rating DESC, u.last_name`, params, db)
+export async function listProviderRows(filter: { discipline?: Discipline | undefined }): Promise<ProviderRow[]> {
+  let q: FirebaseFirestore.Query = providers().where('acceptingBookings', '==', true)
+  if (filter.discipline) q = q.where('discipline', '==', filter.discipline)
+  const snap = await q.get()
+  if (snap.empty) return []
+  const people = await db.getAll(...snap.docs.map((d) => users().doc(d.id)))
+  const rows: ProviderRow[] = []
+  snap.docs.forEach((d, i) => {
+    const row = join(d.id, d.data() as ProviderDoc, docOf<UserDoc>(people[i]!))
+    if (row) rows.push(row)
+  })
+  return rows.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.lastName.localeCompare(b.lastName))
 }
 
-export async function findProviderRow(id: string, db: Db = pool) {
-  return queryOne<ProviderRow>(`${SELECT} WHERE u.id = ? AND u.status = 'active'`, [id], db)
-}
-
-export interface HoursRow extends RowDataPacket {
-  weekday: number
-  start_minute: number
-  end_minute: number
-}
-
-export async function listHours(providerId: string, db: Db = pool) {
-  return query<HoursRow>(
-    'SELECT weekday, start_minute, end_minute FROM provider_hours WHERE provider_id = ? ORDER BY weekday, start_minute',
-    [providerId],
-    db,
-  )
-}
-
-export interface RangeRow extends RowDataPacket {
-  starts_at: Date
-  ends_at: Date
-}
-
-/** Live bookings overlapping [from, to) — cancelled and no-show rows free the slot. */
-export async function listBookedRanges(providerId: string, from: Date, to: Date, db: Db = pool) {
-  return query<RangeRow>(
-    `SELECT starts_at, DATE_ADD(starts_at, INTERVAL duration_minutes MINUTE) AS ends_at
-     FROM appointments
-     WHERE provider_id = ? AND status IN ('pending','confirmed','completed') AND starts_at < ? AND DATE_ADD(starts_at, INTERVAL duration_minutes MINUTE) > ?`,
-    [providerId, to, from],
-    db,
-  )
-}
-
-export async function listTimeOff(providerId: string, from: Date, to: Date, db: Db = pool) {
-  return query<RangeRow>(
-    'SELECT starts_at, ends_at FROM provider_time_off WHERE provider_id = ? AND starts_at < ? AND ends_at > ?',
-    [providerId, to, from],
-    db,
-  )
+export async function findProviderRow(id: string): Promise<ProviderRow | null> {
+  const [p, u] = await db.getAll(providers().doc(id), users().doc(id))
+  if (!p?.exists) return null
+  return join(id, p.data() as ProviderDoc, docOf<UserDoc>(u!))
 }
 
 export type NewProvider = {
@@ -111,34 +104,32 @@ export type NewProvider = {
   slotMinutes?: number
 }
 
-export async function insertProvider(p: NewProvider, db: Db = pool) {
-  await execute(
-    `INSERT INTO providers (user_id, discipline, review_count, session_rate_minor, currency, channels, timezone, slot_minutes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      p.userId,
-      p.discipline,
-      p.reviewCount ?? 0,
-      p.sessionRateMinor,
-      p.currency ?? 'USD',
-      JSON.stringify(p.channels),
-      p.timezone ?? 'America/New_York',
-      p.slotMinutes ?? 60,
-    ],
-    db,
-  )
+export async function insertProvider(p: NewProvider): Promise<void> {
+  const doc: ProviderDoc = {
+    discipline: p.discipline,
+    reviewCount: p.reviewCount ?? 0,
+    sessionRateMinor: p.sessionRateMinor,
+    currency: (p.currency ?? 'USD') as ProviderDoc['currency'],
+    channels: [...p.channels],
+    timezone: p.timezone ?? 'America/New_York',
+    slotMinutes: p.slotMinutes ?? 60,
+    acceptingBookings: true,
+    hours: [],
+    timeOff: [],
+  }
+  await providers().doc(p.userId).create(doc)
 }
 
-export async function insertHours(
-  providerId: string,
-  rows: readonly { weekday: number; startMinute: number; endMinute: number }[],
-  db: Db = pool,
-) {
-  for (const r of rows) {
-    await execute(
-      'INSERT INTO provider_hours (provider_id, weekday, start_minute, end_minute) VALUES (?, ?, ?, ?)',
-      [providerId, r.weekday, r.startMinute, r.endMinute],
-      db,
-    )
-  }
+/** Replaces the provider's weekly working hours. */
+export async function setHours(providerId: string, hours: readonly Hours[]): Promise<void> {
+  await providers().doc(providerId).update({ hours: [...hours] })
+}
+
+export async function addTimeOff(providerId: string, off: { startsAt: Date; endsAt: Date; reason?: string | null }): Promise<void> {
+  const ref = providers().doc(providerId)
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref)
+    const current = (snap.data() as ProviderDoc | undefined)?.timeOff ?? []
+    tx.update(ref, { timeOff: [...current, { startsAt: Ts.fromDate(off.startsAt), endsAt: Ts.fromDate(off.endsAt), reason: off.reason ?? null }] })
+  })
 }

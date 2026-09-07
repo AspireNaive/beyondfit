@@ -1,78 +1,96 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import type { Timestamp } from 'firebase-admin/firestore'
+import { col, db, docOf, runTransaction, Timestamp as Ts, type Tx } from '../../db/firestore.js'
 import type { Appointment, AppointmentStatus, Discipline, MeetingChannel, Role } from '../../domain.js'
+import { conflict } from '../../lib/errors.js'
+import type { Range } from '../providers/availability.js'
 
-export interface AppointmentRow extends RowDataPacket {
-  id: string
-  tenant_id: string
-  member_id: string
-  member_name: string
-  provider_id: string
-  provider_name: string
+export type AppointmentDoc = {
+  tenantId: string
+  memberId: string
+  memberName: string
+  providerId: string
+  providerName: string
   discipline: Discipline
   channel: MeetingChannel
-  starts_at: Date
-  duration_minutes: number
+  startsAt: Timestamp
+  endsAt: Timestamp
+  durationMinutes: number
   status: AppointmentStatus
-  price_minor: number
+  priceMinor: number
   currency: Appointment['price']['currency']
-  join_url: string | null
+  joinUrl: string | null
   notes: string | null
-  member_goal: string | null
-  created_at: Date
+  memberGoal: string | null
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  cancelledAt: Timestamp | null
 }
+export type AppointmentRow = AppointmentDoc & { id: string }
 
-const SELECT = `
-  SELECT a.id, a.tenant_id, a.member_id, CONCAT(m.first_name, ' ', m.last_name) AS member_name,
-         a.provider_id, CONCAT(p.first_name, ' ', p.last_name) AS provider_name,
-         a.discipline, a.channel, a.starts_at, a.duration_minutes, a.status, a.price_minor, a.currency,
-         a.join_url, a.notes, a.member_goal, a.created_at
-  FROM appointments a
-  JOIN users m ON m.id = a.member_id
-  JOIN users p ON p.id = a.provider_id`
+const appointments = () => db.collection(col.appointments)
+const slotLocks = () => db.collection(col.slotLocks)
+
+/** Cancelled and no-show sessions free their slot; everything else holds it. */
+export const isLive = (status: AppointmentStatus) => status !== 'cancelled' && status !== 'no_show'
+export const slotLockId = (providerId: string, startsAt: Date) => `${providerId}_${startsAt.getTime()}`
+/** Sessions are at most 60 minutes, so anything overlapping [from, to) starts after from − 2h. */
+const OVERLAP_LOOKBACK_MS = 2 * 3_600_000
 
 export const toAppointment = (r: AppointmentRow): Appointment => ({
   id: r.id,
-  memberId: r.member_id,
-  memberName: r.member_name,
-  providerId: r.provider_id,
-  providerName: r.provider_name,
+  memberId: r.memberId,
+  memberName: r.memberName,
+  providerId: r.providerId,
+  providerName: r.providerName,
   discipline: r.discipline,
   channel: r.channel,
-  startsAt: r.starts_at.toISOString(),
-  durationMinutes: r.duration_minutes,
+  startsAt: r.startsAt.toDate().toISOString(),
+  durationMinutes: r.durationMinutes,
   status: r.status,
-  price: { amountMinor: r.price_minor, currency: r.currency },
-  ...(r.join_url ? { joinUrl: r.join_url } : {}),
+  price: { amountMinor: r.priceMinor, currency: r.currency },
+  ...(r.joinUrl ? { joinUrl: r.joinUrl } : {}),
   ...(r.notes ? { notes: r.notes } : {}),
-  ...(r.member_goal ? { memberGoal: r.member_goal } : {}),
-  createdAt: r.created_at.toISOString(),
+  ...(r.memberGoal ? { memberGoal: r.memberGoal } : {}),
+  createdAt: r.createdAt.toDate().toISOString(),
 })
 
-export async function findAppointmentRow(id: string, db: Db = pool) {
-  return queryOne<AppointmentRow>(`${SELECT} WHERE a.id = ?`, [id], db)
+export async function findAppointmentRow(id: string, tx?: Tx): Promise<AppointmentRow | null> {
+  const ref = appointments().doc(id)
+  return docOf<AppointmentDoc>(tx ? await tx.get(ref) : await ref.get())
 }
 
-export async function listAppointmentRows(
-  scope: { role: Role; userId: string; tenantId: string },
-  db: Db = pool,
-): Promise<AppointmentRow[]> {
-  const where: Record<Role, [string, unknown[]]> = {
-    member: ['a.member_id = ?', [scope.userId]],
-    coach: ['a.provider_id = ?', [scope.userId]],
-    admin: ['a.tenant_id = ?', [scope.tenantId]],
-    app_manager: ['1 = 1', []],
+export async function listAppointmentRows(scope: { role: Role; userId: string; tenantId: string }): Promise<AppointmentRow[]> {
+  const base = appointments()
+  const q: Record<Role, FirebaseFirestore.Query> = {
+    member: base.where('memberId', '==', scope.userId),
+    coach: base.where('providerId', '==', scope.userId),
+    admin: base.where('tenantId', '==', scope.tenantId),
+    app_manager: base,
   }
-  const [clause, params] = where[scope.role]
-  return query<AppointmentRow>(`${SELECT} WHERE ${clause} ORDER BY a.starts_at`, params, db)
+  const snap = await q[scope.role].orderBy('startsAt').get()
+  return snap.docs.map((d) => docOf<AppointmentDoc>(d)!)
+}
+
+/** Live bookings overlapping [from, to) as millisecond ranges. */
+export async function listBookedRanges(providerId: string, from: Date, to: Date, tx?: Tx): Promise<Range[]> {
+  const q = appointments()
+    .where('providerId', '==', providerId)
+    .where('startsAt', '>=', Ts.fromDate(new Date(from.getTime() - OVERLAP_LOOKBACK_MS)))
+    .where('startsAt', '<', Ts.fromDate(to))
+  const snap = tx ? await tx.get(q) : await q.get()
+  return snap.docs
+    .map((d) => d.data() as AppointmentDoc)
+    .filter((a) => isLive(a.status) && a.endsAt.toMillis() > from.getTime())
+    .map((a) => ({ start: a.startsAt.toMillis(), end: a.endsAt.toMillis() }))
 }
 
 export type NewAppointment = {
   id: string
   tenantId: string
   memberId: string
+  memberName: string
   providerId: string
+  providerName: string
   discipline: Discipline
   channel: MeetingChannel
   startsAt: Date
@@ -86,40 +104,77 @@ export type NewAppointment = {
   createdAt?: Date
 }
 
-export async function insertAppointment(a: NewAppointment, db: Db = pool) {
-  const live = a.status !== 'cancelled' && a.status !== 'no_show'
-  await execute(
-    `INSERT INTO appointments (id, tenant_id, member_id, provider_id, discipline, channel, starts_at, duration_minutes, status,
-       price_minor, currency, join_url, notes, member_goal, slot_key${a.createdAt ? ', created_at' : ''})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${a.createdAt ? ', ?' : ''})`,
-    [
-      a.id, a.tenantId, a.memberId, a.providerId, a.discipline, a.channel, a.startsAt, a.durationMinutes, a.status,
-      a.priceMinor, a.currency, a.joinUrl ?? null, a.notes ?? null, a.memberGoal ?? null, live ? a.startsAt : null,
-      ...(a.createdAt ? [a.createdAt] : []),
-    ],
-    db,
-  )
+function toDoc(a: NewAppointment): AppointmentDoc {
+  const created = a.createdAt ? Ts.fromDate(a.createdAt) : Ts.now()
+  return {
+    tenantId: a.tenantId,
+    memberId: a.memberId,
+    memberName: a.memberName,
+    providerId: a.providerId,
+    providerName: a.providerName,
+    discipline: a.discipline,
+    channel: a.channel,
+    startsAt: Ts.fromDate(a.startsAt),
+    endsAt: Ts.fromDate(new Date(a.startsAt.getTime() + a.durationMinutes * 60_000)),
+    durationMinutes: a.durationMinutes,
+    status: a.status,
+    priceMinor: a.priceMinor,
+    currency: a.currency as AppointmentDoc['currency'],
+    joinUrl: a.joinUrl ?? null,
+    notes: a.notes ?? null,
+    memberGoal: a.memberGoal ?? null,
+    createdAt: created,
+    updatedAt: created,
+    cancelledAt: null,
+  }
 }
 
-export async function setAppointmentStatus(id: string, status: AppointmentStatus, db: Db = pool) {
-  const live = status !== 'cancelled' && status !== 'no_show'
-  await execute(
-    `UPDATE appointments
-     SET status = ?, slot_key = ${live ? 'starts_at' : 'NULL'}, cancelled_at = ${status === 'cancelled' ? 'NOW(3)' : 'cancelled_at'}
-     WHERE id = ?`,
-    [status, id],
-    db,
-  )
+/**
+ * Writes the appointment and, when it is live, claims the slot lock. Inside a
+ * caller's transaction the reads must already have happened; standalone, it
+ * runs its own transaction. A taken slot surfaces as a 409 `slot_taken`.
+ */
+export async function insertAppointment(a: NewAppointment, tx?: Tx): Promise<void> {
+  const doc = toDoc(a)
+  const write = (t: Tx) => {
+    if (isLive(a.status)) t.create(slotLocks().doc(slotLockId(a.providerId, a.startsAt)), { appointmentId: a.id })
+    t.create(appointments().doc(a.id), doc)
+  }
+  if (tx) {
+    write(tx)
+    return
+  }
+  try {
+    await runTransaction(async (t) => {
+      if (isLive(a.status) && (await t.get(slotLocks().doc(slotLockId(a.providerId, a.startsAt)))).exists) {
+        throw conflict('That slot was just taken. Pick another time.', 'slot_taken')
+      }
+      write(t)
+    })
+  } catch (error) {
+    if ((error as { code?: number }).code === 6) throw conflict('That slot was just taken. Pick another time.', 'slot_taken')
+    throw error
+  }
 }
 
-/** Any live booking overlapping [start, end) for the provider — run inside the booking transaction. */
-export async function findOverlap(providerId: string, start: Date, end: Date, db: Db) {
-  return queryOne<RowDataPacket & { id: string }>(
-    `SELECT id FROM appointments
-     WHERE provider_id = ? AND status IN ('pending','confirmed','completed')
-       AND starts_at < ? AND DATE_ADD(starts_at, INTERVAL duration_minutes MINUTE) > ?
-     LIMIT 1 FOR UPDATE`,
-    [providerId, end, start],
-    db,
-  )
+export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<void> {
+  await runTransaction(async (tx) => {
+    const ref = appointments().doc(id)
+    const row = docOf<AppointmentDoc>(await tx.get(ref))
+    if (!row) return
+    const lock = slotLocks().doc(slotLockId(row.providerId, row.startsAt.toDate()))
+    const lockSnap = await tx.get(lock)
+    tx.update(ref, {
+      status,
+      updatedAt: Ts.now(),
+      ...(status === 'cancelled' ? { cancelledAt: Ts.now() } : {}),
+    })
+    if (isLive(status) && !lockSnap.exists) tx.create(lock, { appointmentId: id })
+    if (!isLive(status) && lockSnap.exists) tx.delete(lock)
+  })
+}
+
+/** Reads the slot lock inside the caller's transaction; true when the slot is held. */
+export async function slotIsTaken(providerId: string, startsAt: Date, tx: Tx): Promise<boolean> {
+  return (await tx.get(slotLocks().doc(slotLockId(providerId, startsAt)))).exists
 }

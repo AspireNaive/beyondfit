@@ -1,6 +1,6 @@
-import type { RowDataPacket } from 'mysql2/promise'
+import type { Timestamp } from 'firebase-admin/firestore'
 import { config } from '../config.js'
-import { execute, pool, queryOne, withTransaction } from '../db/pool.js'
+import { col, db, docOf, Timestamp as Ts } from '../db/firestore.js'
 import { Role, type AuthSession, type Tenant, type UserProfile } from '../domain.js'
 import { HttpError, badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/errors.js'
 import { newId, randomToken } from '../lib/ids.js'
@@ -31,6 +31,30 @@ const PORTAL_ACCEPTS: Record<Role, readonly Role[]> = {
 
 const INVALID = () =>
   new HttpError(400, 'That email and password combination is not recognised.', { code: 'invalid_credentials' })
+
+/** refreshTokens/{sha256(token)} — the raw token never touches the database. */
+type RefreshDoc = {
+  userId: string
+  sessionId: string
+  expiresAt: Timestamp
+  revokedAt: Timestamp | null
+  userAgent: string | null
+  createdAt: Timestamp
+}
+/** passwordResetTokens/{sha256(token)} */
+type ResetDoc = { userId: string; expiresAt: Timestamp; usedAt: Timestamp | null; createdAt: Timestamp }
+
+const refreshTokens = () => db.collection(col.refreshTokens)
+const resetTokens = () => db.collection(col.passwordResetTokens)
+
+/** Marks every live refresh token matching the query revoked. */
+async function revoke(query: FirebaseFirestore.Query): Promise<void> {
+  const snap = await query.where('revokedAt', '==', null).get()
+  if (snap.empty) return
+  const batch = db.batch()
+  for (const d of snap.docs) batch.update(d.ref, { revokedAt: Ts.now() })
+  await batch.commit()
+}
 
 export type LoginInput = {
   email: string
@@ -64,25 +88,22 @@ async function issueSession(user: UserProfile, options: SessionOptions = {}): Pr
   )
 
   const refreshToken = newRefreshToken()
-  await execute(
-    `INSERT INTO refresh_tokens (id, user_id, session_id, token_hash, expires_at, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      newId(),
-      user.id,
-      sessionId,
-      hashToken(refreshToken),
-      new Date(Date.now() + config.auth.refreshTtlSeconds * 1000),
-      options.userAgent?.slice(0, 255) ?? null,
-    ],
-  )
+  const doc: RefreshDoc = {
+    userId: user.id,
+    sessionId,
+    expiresAt: Ts.fromDate(new Date(Date.now() + config.auth.refreshTtlSeconds * 1000)),
+    revokedAt: null,
+    userAgent: options.userAgent?.slice(0, 255) ?? null,
+    createdAt: Ts.now(),
+  }
+  await refreshTokens().doc(hashToken(refreshToken)).create(doc)
 
   return { user, tenant, accessToken, refreshToken, expiresAt }
 }
 
 export async function login(input: LoginInput, userAgent?: string): Promise<AuthSession> {
   const row = await findUserRowByEmail(input.email)
-  if (!row || !(await verifyPassword(input.password, row.password_hash))) throw INVALID()
+  if (!row || !(await verifyPassword(input.password, row.passwordHash))) throw INVALID()
 
   const user = toUserProfile(row)
   if (user.status === 'suspended') {
@@ -141,34 +162,22 @@ export async function me(user: UserProfile): Promise<{ user: UserProfile; tenant
   return { user, tenant }
 }
 
-interface RefreshRow extends RowDataPacket {
-  id: string
-  user_id: string
-  session_id: string
-  expires_at: Date
-  revoked_at: Date | null
-}
-
 /** Rotates the refresh token: the presented one is revoked, a new pair is issued. */
 export async function refresh(rawToken: string, userAgent?: string): Promise<AuthSession> {
-  const row = await queryOne<RefreshRow>(
-    'SELECT id, user_id, session_id, expires_at, revoked_at FROM refresh_tokens WHERE token_hash = ?',
-    [hashToken(rawToken)],
-  )
-  if (!row || row.revoked_at || row.expires_at.getTime() < Date.now()) {
+  const ref = refreshTokens().doc(hashToken(rawToken))
+  const row = docOf<RefreshDoc>(await ref.get())
+  if (!row || row.revokedAt || row.expiresAt.toMillis() < Date.now()) {
     throw unauthorized('Your session has expired. Sign in again.')
   }
-  const user = await findUserById(row.user_id)
+  const user = await findUserById(row.userId)
   if (!user || user.status === 'suspended') throw unauthorized('Your session has expired. Sign in again.')
 
-  await execute('UPDATE refresh_tokens SET revoked_at = NOW(3) WHERE id = ?', [row.id])
-  return issueSession(user, { userAgent, sessionId: row.session_id })
+  await ref.update({ revokedAt: Ts.now() })
+  return issueSession(user, { userAgent, sessionId: row.sessionId })
 }
 
 export async function logout(sessionId: string): Promise<void> {
-  await execute('UPDATE refresh_tokens SET revoked_at = NOW(3) WHERE session_id = ? AND revoked_at IS NULL', [
-    sessionId,
-  ])
+  await revoke(refreshTokens().where('sessionId', '==', sessionId))
 }
 
 const RESET_TTL_MS = 30 * 60_000
@@ -178,35 +187,27 @@ export async function requestPasswordReset(email: string): Promise<void> {
   const row = await findUserRowByEmail(email)
   if (!row) return
   const token = randomToken(32)
-  await execute(
-    'INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)',
-    [newId(), row.id, hashToken(token), new Date(Date.now() + RESET_TTL_MS)],
-  )
+  const doc: ResetDoc = {
+    userId: row.id,
+    expiresAt: Ts.fromDate(new Date(Date.now() + RESET_TTL_MS)),
+    usedAt: null,
+    createdAt: Ts.now(),
+  }
+  await resetTokens().doc(hashToken(token)).create(doc)
   await sendPasswordResetEmail(row.email, `${config.appUrl}/reset-password?token=${token}`)
 }
 
-interface ResetRow extends RowDataPacket {
-  id: string
-  user_id: string
-  expires_at: Date
-  used_at: Date | null
-}
-
 export async function confirmPasswordReset(token: string, password: string): Promise<void> {
-  const row = await queryOne<ResetRow>(
-    'SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?',
-    [hashToken(token)],
-  )
-  if (!row || row.used_at || row.expires_at.getTime() < Date.now()) {
+  const ref = resetTokens().doc(hashToken(token))
+  const row = docOf<ResetDoc>(await ref.get())
+  if (!row || row.usedAt || row.expiresAt.toMillis() < Date.now()) {
     throw badRequest('That reset link is invalid or has expired. Request a new one.', 'reset_invalid')
   }
   const passwordHash = await hashPassword(password)
-  await withTransaction(async (conn) => {
-    await updateUser(row.user_id, { passwordHash }, conn)
-    await execute('UPDATE password_reset_tokens SET used_at = NOW(3) WHERE id = ?', [row.id], conn)
-    // Every existing session is signed out: the old password may have leaked.
-    await execute('UPDATE refresh_tokens SET revoked_at = NOW(3) WHERE user_id = ? AND revoked_at IS NULL', [row.user_id], conn)
-  })
+  await updateUser(row.userId, { passwordHash })
+  await ref.update({ usedAt: Ts.now() })
+  // Every existing session is signed out: the old password may have leaked.
+  await revoke(refreshTokens().where('userId', '==', row.userId))
 }
 
 export type ProfilePatch = Partial<{
@@ -228,10 +229,9 @@ export async function updateProfile(userId: string, patch: ProfilePatch): Promis
 
 export async function changePassword(userId: string, current: string, next: string): Promise<void> {
   const row = await findUserRowById(userId)
-  if (!row || !(await verifyPassword(current, row.password_hash))) {
+  if (!row || !(await verifyPassword(current, row.passwordHash))) {
     throw badRequest('Your current password is not correct.', 'invalid_credentials')
   }
   await updateUser(userId, { passwordHash: await hashPassword(next) })
 }
 
-export { pool }

@@ -67,7 +67,7 @@ sideways, and the background video doesn't download at all on mobile — no
 reason to spend someone's data on decoration.
 
 **The data is real when the API is running.** Sign-in, bookings, orders,
-memberships and progress all read and write a MySQL database through the Node
+memberships and progress all read and write Cloud Firestore through the Node
 API in `server/`. The public Vercel demo still runs on in-browser sample data
 until the API is hosted on GoDaddy; the screens are identical either way.
 
@@ -75,7 +75,7 @@ until the API is hosted on GoDaddy; the screens are identical either way.
 
 **"Can it handle real numbers of users?"**
 The website part is just files on a CDN, which scales on its own. The database
-work sits behind the Node API and MySQL, which scale separately.
+work sits behind the Node API and Cloud Firestore, which scale separately.
 
 **"How long to make it real?"**
 The screens are done. What's left is the backend: real accounts, a database,

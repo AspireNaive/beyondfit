@@ -1,6 +1,5 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import type { Timestamp } from 'firebase-admin/firestore'
+import { col, db, docOf, runTransaction, Timestamp as Ts, type Tx } from '../../db/firestore.js'
 import type {
   Order,
   OrderLine,
@@ -12,108 +11,93 @@ import type {
   Subscription,
   SubscriptionStatus,
 } from '../../domain.js'
-import { toIsoDateTime } from '../../lib/json.js'
 
 type Currency = Order['total']['currency']
 
-interface OrderRow extends RowDataPacket {
-  id: string
-  order_no: number
-  reference: string
-  tenant_id: string
-  customer_id: string
-  customer_name: string
-  customer_email: string
-  subtotal_minor: number
-  shipping_minor: number
-  tax_minor: number
-  total_minor: number
-  currency: Currency
-  status: OrderStatus
-  placed_at: Date
-  fulfilled_at: Date | null
-  tracking_number: string | null
-}
-
-interface LineRow extends RowDataPacket {
-  order_id: string
-  product_id: string
+export type LineDoc = {
+  productId: string
   name: string
   quantity: number
-  unit_price_minor: number
+  unitPriceMinor: number
   currency: Currency
-  instructor_id: string | null
+  instructorId: string | null
 }
 
-const ORDER_COLS = 'id, order_no, reference, tenant_id, customer_id, customer_name, customer_email, subtotal_minor, shipping_minor, tax_minor, total_minor, currency, status, placed_at, fulfilled_at, tracking_number'
+export type OrderDoc = {
+  orderNo: number
+  reference: string
+  tenantId: string
+  customerId: string
+  customerName: string
+  customerEmail: string
+  lines: LineDoc[]
+  /** Coaches whose products are in the order — array-contains query for their view. */
+  instructorIds: string[]
+  subtotalMinor: number
+  shippingMinor: number
+  taxMinor: number
+  totalMinor: number
+  currency: Currency
+  status: OrderStatus
+  placedAt: Timestamp
+  fulfilledAt: Timestamp | null
+  trackingNumber: string | null
+  updatedAt: Timestamp
+}
+export type OrderRow = OrderDoc & { id: string }
 
-const toLine = (l: LineRow): OrderLine => ({
-  productId: l.product_id,
+const orders = () => db.collection(col.orders)
+const payments = () => db.collection(col.payments)
+const subscriptions = () => db.collection(col.subscriptions)
+const counterRef = () => db.collection(col.counters).doc('orders')
+
+const toLine = (l: LineDoc): OrderLine => ({
+  productId: l.productId,
   name: l.name,
   quantity: l.quantity,
-  unitPrice: { amountMinor: l.unit_price_minor, currency: l.currency },
-  ...(l.instructor_id ? { instructorId: l.instructor_id } : {}),
+  unitPrice: { amountMinor: l.unitPriceMinor, currency: l.currency },
+  ...(l.instructorId ? { instructorId: l.instructorId } : {}),
 })
 
-const toOrder = (r: OrderRow, lines: LineRow[]): Order => ({
+export const toOrder = (r: OrderRow): Order => ({
   id: r.id,
   reference: r.reference,
-  customerId: r.customer_id,
-  customerName: r.customer_name,
-  customerEmail: r.customer_email,
-  lines: lines.map(toLine),
-  subtotal: { amountMinor: r.subtotal_minor, currency: r.currency },
-  shipping: { amountMinor: r.shipping_minor, currency: r.currency },
-  tax: { amountMinor: r.tax_minor, currency: r.currency },
-  total: { amountMinor: r.total_minor, currency: r.currency },
+  customerId: r.customerId,
+  customerName: r.customerName,
+  customerEmail: r.customerEmail,
+  lines: r.lines.map(toLine),
+  subtotal: { amountMinor: r.subtotalMinor, currency: r.currency },
+  shipping: { amountMinor: r.shippingMinor, currency: r.currency },
+  tax: { amountMinor: r.taxMinor, currency: r.currency },
+  total: { amountMinor: r.totalMinor, currency: r.currency },
   status: r.status,
-  placedAt: r.placed_at.toISOString(),
-  ...(r.fulfilled_at ? { fulfilledAt: r.fulfilled_at.toISOString() } : {}),
-  ...(r.tracking_number ? { trackingNumber: r.tracking_number } : {}),
+  placedAt: r.placedAt.toDate().toISOString(),
+  ...(r.fulfilledAt ? { fulfilledAt: r.fulfilledAt.toDate().toISOString() } : {}),
+  ...(r.trackingNumber ? { trackingNumber: r.trackingNumber } : {}),
 })
-
-async function attachLines(rows: OrderRow[], db: Db): Promise<Order[]> {
-  if (rows.length === 0) return []
-  const lines = await query<LineRow>(
-    `SELECT order_id, product_id, name, quantity, unit_price_minor, currency, instructor_id FROM order_lines
-     WHERE order_id IN (${rows.map(() => '?').join(',')}) ORDER BY id`,
-    rows.map((r) => r.id),
-    db,
-  )
-  const byOrder = new Map<string, LineRow[]>()
-  for (const l of lines) (byOrder.get(l.order_id) ?? byOrder.set(l.order_id, []).get(l.order_id)!).push(l)
-  return rows.map((r) => toOrder(r, byOrder.get(r.id) ?? []))
-}
 
 export type Scope = { role: Role; userId: string; tenantId: string }
 
-export async function listOrders(scope: Scope, db: Db = pool): Promise<Order[]> {
-  const where: Record<Role, [string, unknown[]]> = {
-    member: ['customer_id = ?', [scope.userId]],
-    // A coach sees orders that contain something they authored.
-    coach: ['id IN (SELECT order_id FROM order_lines WHERE instructor_id = ?)', [scope.userId]],
-    admin: ['tenant_id = ?', [scope.tenantId]],
-    app_manager: ['1 = 1', []],
+export async function listOrders(scope: Scope): Promise<Order[]> {
+  const base = orders()
+  const q: Record<Role, FirebaseFirestore.Query> = {
+    member: base.where('customerId', '==', scope.userId),
+    coach: base.where('instructorIds', 'array-contains', scope.userId),
+    admin: base.where('tenantId', '==', scope.tenantId),
+    app_manager: base,
   }
-  const [clause, params] = where[scope.role]
-  const rows = await query<OrderRow>(`SELECT ${ORDER_COLS} FROM orders WHERE ${clause} ORDER BY placed_at DESC`, params, db)
-  return attachLines(rows, db)
+  const snap = await q[scope.role].orderBy('placedAt', 'desc').get()
+  return snap.docs.map((d) => toOrder(docOf<OrderDoc>(d)!))
 }
 
-export async function findOrderRow(id: string, db: Db = pool) {
-  return queryOne<OrderRow>(`SELECT ${ORDER_COLS} FROM orders WHERE id = ?`, [id], db)
+export async function findOrderRow(id: string, tx?: Tx): Promise<OrderRow | null> {
+  const ref = orders().doc(id)
+  return docOf<OrderDoc>(tx ? await tx.get(ref) : await ref.get())
 }
 
-export async function findOrder(id: string, db: Db = pool): Promise<Order | null> {
-  const row = await findOrderRow(id, db)
-  if (!row) return null
-  return (await attachLines([row], db))[0] ?? null
-}
-
-/** True when the order contains a line authored by `instructorId`. */
-export async function orderHasInstructor(orderId: string, instructorId: string, db: Db = pool) {
-  const row = await queryOne(`SELECT 1 AS hit FROM order_lines WHERE order_id = ? AND instructor_id = ? LIMIT 1`, [orderId, instructorId], db)
-  return row !== null
+export async function findOrder(id: string): Promise<Order | null> {
+  const row = await findOrderRow(id)
+  return row ? toOrder(row) : null
 }
 
 export type NewOrder = {
@@ -136,87 +120,104 @@ export type NewOrder = {
 /** References are sequential and human-readable: KL-10001, KL-10002, … */
 export const referenceFor = (orderNo: number) => `KL-${10_000 + orderNo}`
 
-export async function insertOrder(o: NewOrder, db: Db): Promise<string> {
-  const result = await execute(
-    `INSERT INTO orders (id, reference, tenant_id, customer_id, customer_name, customer_email, subtotal_minor, shipping_minor, tax_minor, total_minor, currency, status, tracking_number${o.placedAt ? ', placed_at' : ''})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${o.placedAt ? ', ?' : ''})`,
-    [
-      o.id, `pending-${o.id}`, o.tenantId, o.customerId, o.customerName, o.customerEmail,
-      o.subtotalMinor, o.shippingMinor, o.taxMinor, o.totalMinor, o.currency, o.status, o.trackingNumber ?? null,
-      ...(o.placedAt ? [o.placedAt] : []),
-    ],
-    db,
-  )
-  const reference = referenceFor(result.insertId)
-  await execute('UPDATE orders SET reference = ? WHERE id = ?', [reference, o.id], db)
-  for (const l of o.lines) {
-    await execute(
-      'INSERT INTO order_lines (order_id, product_id, name, quantity, unit_price_minor, currency, instructor_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [o.id, l.productId, l.name, l.quantity, l.unitPriceMinor, l.currency, l.instructorId ?? null],
-      db,
-    )
+/**
+ * Allocates the next order number from a counter document and writes the
+ * order. Inside a caller's transaction the counter read is the last read
+ * before the caller's writes; standalone, it runs its own transaction.
+ */
+export async function insertOrder(o: NewOrder, tx?: Tx): Promise<string> {
+  const run = async (t: Tx): Promise<string> => {
+    const counter = await t.get(counterRef())
+    const orderNo = ((counter.data() as { next?: number } | undefined)?.next ?? 1)
+    const reference = referenceFor(orderNo)
+    const placed = o.placedAt ? Ts.fromDate(o.placedAt) : Ts.now()
+    const doc: OrderDoc = {
+      orderNo,
+      reference,
+      tenantId: o.tenantId,
+      customerId: o.customerId,
+      customerName: o.customerName,
+      customerEmail: o.customerEmail,
+      lines: o.lines.map((l) => ({ ...l, currency: l.currency as Currency, instructorId: l.instructorId ?? null })),
+      instructorIds: [...new Set(o.lines.map((l) => l.instructorId).filter((x): x is string => Boolean(x)))],
+      subtotalMinor: o.subtotalMinor,
+      shippingMinor: o.shippingMinor,
+      taxMinor: o.taxMinor,
+      totalMinor: o.totalMinor,
+      currency: o.currency as Currency,
+      status: o.status,
+      placedAt: placed,
+      fulfilledAt: null,
+      trackingNumber: o.trackingNumber ?? null,
+      updatedAt: Ts.now(),
+    }
+    t.set(counterRef(), { next: orderNo + 1 }, { merge: true })
+    t.create(orders().doc(o.id), doc)
+    return reference
   }
-  return reference
+  return tx ? run(tx) : runTransaction(run)
 }
 
-export async function setOrderStatus(id: string, status: OrderStatus, db: Db = pool) {
+export function setOrderStatus(id: string, status: OrderStatus, current: OrderRow, tx: Tx): void {
   const fulfilled = status === 'shipped' || status === 'delivered'
-  await execute(
-    `UPDATE orders SET status = ?, fulfilled_at = ${fulfilled ? 'COALESCE(fulfilled_at, NOW(3))' : 'fulfilled_at'} WHERE id = ?`,
-    [status, id],
-    db,
-  )
+  tx.update(orders().doc(id), {
+    status,
+    updatedAt: Ts.now(),
+    ...(fulfilled && !current.fulfilledAt ? { fulfilledAt: Ts.now() } : {}),
+  })
 }
 
 // ---- Payments ---------------------------------------------------------------
 
-interface PaymentRow extends RowDataPacket {
-  id: string
+export type PaymentDoc = {
+  tenantId: string
   reference: string
-  order_id: string | null
-  customer_id: string
-  customer_name: string
+  orderId: string | null
+  customerId: string
+  customerName: string
   description: string
-  gross_minor: number
-  fee_minor: number
-  net_minor: number
+  grossMinor: number
+  feeMinor: number
+  netMinor: number
   currency: Currency
   method: PaymentMethod
-  card_last4: string | null
-  card_brand: string | null
+  cardLast4: string | null
+  cardBrand: string | null
   status: PaymentStatus
-  processed_at: Date
-  payout_id: string | null
+  provider: string
+  processedAt: Timestamp
+  payoutId: string | null
 }
+type PaymentRow = PaymentDoc & { id: string }
 
 const toPayment = (r: PaymentRow): Payment => ({
   id: r.id,
   reference: r.reference,
-  ...(r.order_id ? { orderId: r.order_id } : {}),
-  customerId: r.customer_id,
-  customerName: r.customer_name,
+  ...(r.orderId ? { orderId: r.orderId } : {}),
+  customerId: r.customerId,
+  customerName: r.customerName,
   description: r.description,
-  gross: { amountMinor: r.gross_minor, currency: r.currency },
-  fee: { amountMinor: r.fee_minor, currency: r.currency },
-  net: { amountMinor: r.net_minor, currency: r.currency },
+  gross: { amountMinor: r.grossMinor, currency: r.currency },
+  fee: { amountMinor: r.feeMinor, currency: r.currency },
+  net: { amountMinor: r.netMinor, currency: r.currency },
   method: r.method,
-  ...(r.card_last4 ? { cardLast4: r.card_last4 } : {}),
-  ...(r.card_brand ? { cardBrand: r.card_brand } : {}),
+  ...(r.cardLast4 ? { cardLast4: r.cardLast4 } : {}),
+  ...(r.cardBrand ? { cardBrand: r.cardBrand } : {}),
   status: r.status,
-  processedAt: r.processed_at.toISOString(),
-  ...(r.payout_id ? { payoutId: r.payout_id } : {}),
+  processedAt: r.processedAt.toDate().toISOString(),
+  ...(r.payoutId ? { payoutId: r.payoutId } : {}),
 })
 
-export async function listPayments(scope: Scope, db: Db = pool): Promise<Payment[]> {
-  const where: Record<Role, [string, unknown[]]> = {
-    member: ['customer_id = ?', [scope.userId]],
-    coach: ['customer_id = ?', [scope.userId]],
-    admin: ['tenant_id = ?', [scope.tenantId]],
-    app_manager: ['1 = 1', []],
+export async function listPayments(scope: Scope): Promise<Payment[]> {
+  const base = payments()
+  const q: Record<Role, FirebaseFirestore.Query> = {
+    member: base.where('customerId', '==', scope.userId),
+    coach: base.where('customerId', '==', scope.userId),
+    admin: base.where('tenantId', '==', scope.tenantId),
+    app_manager: base,
   }
-  const [clause, params] = where[scope.role]
-  const rows = await query<PaymentRow>(`SELECT * FROM payments WHERE ${clause} ORDER BY processed_at DESC`, params, db)
-  return rows.map(toPayment)
+  const snap = await q[scope.role].orderBy('processedAt', 'desc').get()
+  return snap.docs.map((d) => toPayment(docOf<PaymentDoc>(d)!))
 }
 
 export type NewPayment = {
@@ -239,84 +240,106 @@ export type NewPayment = {
   payoutId?: string | null
 }
 
-export async function insertPayment(p: NewPayment, db: Db = pool) {
-  await execute(
-    `INSERT INTO payments (id, tenant_id, reference, order_id, customer_id, customer_name, description, gross_minor, fee_minor, net_minor, currency, method, card_last4, card_brand, status, provider, payout_id${p.processedAt ? ', processed_at' : ''})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${p.processedAt ? ', ?' : ''})`,
-    [
-      p.id, p.tenantId, p.reference, p.orderId ?? null, p.customerId, p.customerName, p.description, p.grossMinor, p.feeMinor,
-      p.grossMinor - p.feeMinor, p.currency, p.method, p.cardLast4 ?? null, p.cardBrand ?? null, p.status, p.provider, p.payoutId ?? null,
-      ...(p.processedAt ? [p.processedAt] : []),
-    ],
-    db,
-  )
+export function paymentDoc(p: NewPayment): PaymentDoc {
+  return {
+    tenantId: p.tenantId,
+    reference: p.reference,
+    orderId: p.orderId ?? null,
+    customerId: p.customerId,
+    customerName: p.customerName,
+    description: p.description,
+    grossMinor: p.grossMinor,
+    feeMinor: p.feeMinor,
+    netMinor: p.grossMinor - p.feeMinor,
+    currency: p.currency as Currency,
+    method: p.method,
+    cardLast4: p.cardLast4 ?? null,
+    cardBrand: p.cardBrand ?? null,
+    status: p.status,
+    provider: p.provider,
+    processedAt: p.processedAt ? Ts.fromDate(p.processedAt) : Ts.now(),
+    payoutId: p.payoutId ?? null,
+  }
 }
 
-export async function setPaymentStatusForOrder(orderId: string, status: PaymentStatus, db: Db = pool) {
-  await execute('UPDATE payments SET status = ? WHERE order_id = ?', [status, orderId], db)
+export async function insertPayment(p: NewPayment, tx?: Tx): Promise<void> {
+  const ref = payments().doc(p.id)
+  if (tx) tx.create(ref, paymentDoc(p))
+  else await ref.create(paymentDoc(p))
+}
+
+/** Reads the order's payments (a transaction read) so the caller can update them after its writes begin. */
+export async function paymentRefsForOrder(orderId: string, tx: Tx): Promise<FirebaseFirestore.DocumentReference[]> {
+  const snap = await tx.get(payments().where('orderId', '==', orderId))
+  return snap.docs.map((d) => d.ref)
 }
 
 // ---- Subscriptions ----------------------------------------------------------
 
-interface SubscriptionRow extends RowDataPacket {
-  id: string
-  tenant_id: string
-  member_id: string
-  member_name: string
-  plan_name: string
-  price_minor: number
+export type SubscriptionDoc = {
+  tenantId: string
+  memberId: string
+  memberName: string
+  productId: string | null
+  planName: string
+  priceMinor: number
   currency: Currency
   interval: 'month' | 'year'
   status: SubscriptionStatus
-  started_at: Date
-  renews_at: Date
+  startedAt: Timestamp
+  renewsAt: Timestamp
+  cancelledAt: Timestamp | null
+  updatedAt: Timestamp
 }
+export type SubscriptionRow = SubscriptionDoc & { id: string }
 
-const SUB_SELECT = `
-  SELECT s.id, s.tenant_id, s.member_id, CONCAT(u.first_name, ' ', u.last_name) AS member_name, s.plan_name, s.price_minor, s.currency,
-         s.\`interval\`, s.status, s.started_at, s.renews_at
-  FROM subscriptions s JOIN users u ON u.id = s.member_id`
-
-const toSubscription = (r: SubscriptionRow): Subscription => ({
+export const toSubscription = (r: SubscriptionRow): Subscription => ({
   id: r.id,
-  memberId: r.member_id,
-  memberName: r.member_name,
-  planName: r.plan_name,
-  price: { amountMinor: r.price_minor, currency: r.currency },
+  memberId: r.memberId,
+  memberName: r.memberName,
+  planName: r.planName,
+  price: { amountMinor: r.priceMinor, currency: r.currency },
   interval: r.interval,
   status: r.status,
-  startedAt: r.started_at.toISOString(),
-  renewsAt: toIsoDateTime(r.renews_at)!,
+  startedAt: r.startedAt.toDate().toISOString(),
+  renewsAt: r.renewsAt.toDate().toISOString(),
 })
 
-export async function listSubscriptions(scope: Scope, db: Db = pool): Promise<Subscription[]> {
-  const where: Record<Role, [string, unknown[]]> = {
-    member: ['s.member_id = ?', [scope.userId]],
-    coach: ['s.member_id = ?', [scope.userId]],
-    admin: ['s.tenant_id = ?', [scope.tenantId]],
-    app_manager: ['1 = 1', []],
+export async function listSubscriptions(scope: Scope): Promise<Subscription[]> {
+  const base = subscriptions()
+  const q: Record<Role, FirebaseFirestore.Query> = {
+    member: base.where('memberId', '==', scope.userId),
+    coach: base.where('memberId', '==', scope.userId),
+    admin: base.where('tenantId', '==', scope.tenantId),
+    app_manager: base,
   }
-  const [clause, params] = where[scope.role]
-  const rows = await query<SubscriptionRow>(`${SUB_SELECT} WHERE ${clause} ORDER BY s.started_at DESC`, params, db)
-  return rows.map(toSubscription)
+  const snap = await q[scope.role].get()
+  return snap.docs
+    .map((d) => docOf<SubscriptionDoc>(d)!)
+    .sort((a, b) => b.startedAt.toMillis() - a.startedAt.toMillis())
+    .map(toSubscription)
 }
 
-export async function findSubscriptionRow(id: string, db: Db = pool) {
-  return queryOne<SubscriptionRow>(`${SUB_SELECT} WHERE s.id = ?`, [id], db)
+export async function findSubscriptionRow(id: string): Promise<SubscriptionRow | null> {
+  return docOf<SubscriptionDoc>(await subscriptions().doc(id).get())
 }
 
-export async function findActiveSubscription(memberId: string, productId: string, db: Db = pool) {
-  return queryOne<SubscriptionRow>(
-    `${SUB_SELECT} WHERE s.member_id = ? AND s.product_id = ? AND s.status IN ('active','trialing','past_due') LIMIT 1`,
-    [memberId, productId],
-    db,
-  )
+export async function findActiveSubscription(memberId: string, productId: string, tx?: Tx): Promise<SubscriptionRow | null> {
+  const q = subscriptions()
+    .where('memberId', '==', memberId)
+    .where('productId', '==', productId)
+    .where('status', 'in', ['active', 'trialing', 'past_due'])
+    .limit(1)
+  const snap = tx ? await tx.get(q) : await q.get()
+  const doc = snap.docs[0]
+  return doc ? docOf<SubscriptionDoc>(doc) : null
 }
 
 export type NewSubscription = {
   id: string
   tenantId: string
   memberId: string
+  memberName: string
   productId?: string | null
   planName: string
   priceMinor: number
@@ -327,17 +350,27 @@ export type NewSubscription = {
   renewsAt: Date
 }
 
-export async function insertSubscription(s: NewSubscription, db: Db = pool) {
-  await execute(
-    `INSERT INTO subscriptions (id, tenant_id, member_id, product_id, plan_name, price_minor, currency, \`interval\`, status, started_at, renews_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [s.id, s.tenantId, s.memberId, s.productId ?? null, s.planName, s.priceMinor, s.currency, s.interval, s.status, s.startedAt, s.renewsAt],
-    db,
-  )
+export async function insertSubscription(s: NewSubscription, tx?: Tx): Promise<void> {
+  const doc: SubscriptionDoc = {
+    tenantId: s.tenantId,
+    memberId: s.memberId,
+    memberName: s.memberName,
+    productId: s.productId ?? null,
+    planName: s.planName,
+    priceMinor: s.priceMinor,
+    currency: s.currency as Currency,
+    interval: s.interval,
+    status: s.status,
+    startedAt: Ts.fromDate(s.startedAt),
+    renewsAt: Ts.fromDate(s.renewsAt),
+    cancelledAt: null,
+    updatedAt: Ts.now(),
+  }
+  const ref = subscriptions().doc(s.id)
+  if (tx) tx.create(ref, doc)
+  else await ref.create(doc)
 }
 
-export async function cancelSubscriptionRow(id: string, db: Db = pool) {
-  await execute(`UPDATE subscriptions SET status = 'cancelled', cancelled_at = NOW(3) WHERE id = ?`, [id], db)
+export async function cancelSubscriptionRow(id: string): Promise<void> {
+  await subscriptions().doc(id).update({ status: 'cancelled', cancelledAt: Ts.now(), updatedAt: Ts.now() })
 }
-
-export { toSubscription }

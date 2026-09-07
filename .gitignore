@@ -37,3 +37,8 @@ stats.html
 azure-deploy.zip
 .azure-stage/
 .vercel
+
+# Firestore emulator export (local data between runs)
+.firestore-emulator/
+firebase-debug.log
+firestore-debug.log

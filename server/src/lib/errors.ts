@@ -83,8 +83,8 @@ export function toProblem(err: unknown): ProblemDetails {
       errors,
     }
   }
-  // Duplicate key from MySQL surfaces as a conflict rather than a 500.
-  if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ER_DUP_ENTRY') {
+  // Firestore ALREADY_EXISTS (a `create()` on an existing document) is a conflict, not a 500.
+  if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 6) {
     return { type: 'about:blank', title: 'Conflict', status: 409, detail: 'That record already exists.' }
   }
   if (err instanceof SyntaxError && 'body' in err) {

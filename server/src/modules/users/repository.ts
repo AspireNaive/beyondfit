@@ -1,102 +1,109 @@
-import type { RowDataPacket } from 'mysql2/promise'
-import type { Db } from '../../db/pool.js'
-import { execute, pool, query, queryOne } from '../../db/pool.js'
+import type { Timestamp } from 'firebase-admin/firestore'
+import { col, db, docOf, runTransaction, chunk, type Tx, Timestamp as Ts } from '../../db/firestore.js'
 import type { Role, UserProfile, UserStatus } from '../../domain.js'
-import { parseJsonColumn } from '../../lib/json.js'
+import { conflict } from '../../lib/errors.js'
 
-export interface UserRow extends RowDataPacket {
-  id: string
-  tenant_id: string
+/** Stored shape of users/{id}. Nullables are explicit so queries on them work. */
+export type UserDoc = {
+  tenantId: string
   role: Role
-  first_name: string
-  last_name: string
+  firstName: string
+  lastName: string
   email: string
-  password_hash: string
+  passwordHash: string
   phone: string | null
-  avatar_url: string | null
+  avatarUrl: string | null
   title: string | null
   bio: string | null
   location: string | null
-  joined_at: string
-  specialties: unknown
-  credentials: unknown
+  joinedAt: string
+  specialties: string[] | null
+  credentials: string[] | null
   rating: number | null
-  sessions_delivered: number | null
-  assigned_coach_id: string | null
+  sessionsDelivered: number | null
+  assignedCoachId: string | null
   status: UserStatus
+  createdAt: Timestamp
+  updatedAt: Timestamp
 }
 
-const COLUMNS =
-  'id, tenant_id, role, first_name, last_name, email, password_hash, phone, avatar_url, title, bio, location, joined_at, specialties, credentials, rating, sessions_delivered, assigned_coach_id, status'
+export type UserRow = UserDoc & { id: string }
 
-/** Strips the password hash and renames columns to the API shape. */
+const users = () => db.collection(col.users)
+const emails = () => db.collection(col.userEmails)
+
+/** Strips the password hash and drops nulls the API contract leaves out. */
 export function toUserProfile(row: UserRow): UserProfile {
-  const specialties = parseJsonColumn<string[] | null>(row.specialties, null)
-  const credentials = parseJsonColumn<string[] | null>(row.credentials, null)
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    tenantId: row.tenantId,
     role: row.role,
-    firstName: row.first_name,
-    lastName: row.last_name,
+    firstName: row.firstName,
+    lastName: row.lastName,
     email: row.email,
     ...(row.phone ? { phone: row.phone } : {}),
-    avatarUrl: row.avatar_url,
+    avatarUrl: row.avatarUrl,
     ...(row.title ? { title: row.title } : {}),
     ...(row.bio ? { bio: row.bio } : {}),
     ...(row.location ? { location: row.location } : {}),
-    joinedAt: row.joined_at,
-    ...(specialties ? { specialties } : {}),
-    ...(credentials ? { credentials } : {}),
-    ...(row.rating != null ? { rating: Number(row.rating) } : {}),
-    ...(row.sessions_delivered != null ? { sessionsDelivered: row.sessions_delivered } : {}),
-    assignedCoachId: row.assigned_coach_id,
+    joinedAt: row.joinedAt,
+    ...(row.specialties ? { specialties: row.specialties } : {}),
+    ...(row.credentials ? { credentials: row.credentials } : {}),
+    ...(row.rating != null ? { rating: row.rating } : {}),
+    ...(row.sessionsDelivered != null ? { sessionsDelivered: row.sessionsDelivered } : {}),
+    assignedCoachId: row.assignedCoachId,
     status: row.status,
   }
 }
 
-export const fullName = (u: { firstName: string; lastName: string }) =>
-  `${u.firstName} ${u.lastName}`.trim()
+export const fullName = (u: { firstName: string; lastName: string }) => `${u.firstName} ${u.lastName}`.trim()
 
-export async function findUserById(id: string, db: Db = pool): Promise<UserProfile | null> {
-  const row = await queryOne<UserRow>(`SELECT ${COLUMNS} FROM users WHERE id = ?`, [id], db)
+const byName = (a: UserRow, b: UserRow) =>
+  a.role.localeCompare(b.role) || a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)
+
+export async function findUserRowById(id: string, tx?: Tx): Promise<UserRow | null> {
+  const ref = users().doc(id)
+  return docOf<UserDoc>(tx ? await tx.get(ref) : await ref.get())
+}
+
+export async function findUserById(id: string, tx?: Tx): Promise<UserProfile | null> {
+  const row = await findUserRowById(id, tx)
   return row ? toUserProfile(row) : null
 }
 
-export async function findUserRowByEmail(email: string, db: Db = pool): Promise<UserRow | null> {
-  return queryOne<UserRow>(`SELECT ${COLUMNS} FROM users WHERE email = ?`, [email.trim().toLowerCase()], db)
+export async function findUserRowByEmail(email: string): Promise<UserRow | null> {
+  const snap = await users().where('email', '==', email.trim().toLowerCase()).limit(1).get()
+  const doc = snap.docs[0]
+  return doc ? docOf<UserDoc>(doc) : null
 }
 
-export async function findUserRowById(id: string, db: Db = pool): Promise<UserRow | null> {
-  return queryOne<UserRow>(`SELECT ${COLUMNS} FROM users WHERE id = ?`, [id], db)
-}
-
-export async function listUsers(
-  where: { tenantId?: string; role?: Role; assignedCoachId?: string; ids?: readonly string[] },
-  db: Db = pool,
-): Promise<UserProfile[]> {
-  const clauses: string[] = []
-  const params: unknown[] = []
-  if (where.tenantId) {
-    clauses.push('tenant_id = ?')
-    params.push(where.tenantId)
-  }
-  if (where.role) {
-    clauses.push('role = ?')
-    params.push(where.role)
-  }
-  if (where.assignedCoachId) {
-    clauses.push('assigned_coach_id = ?')
-    params.push(where.assignedCoachId)
-  }
+export async function listUsers(where: {
+  tenantId?: string
+  role?: Role
+  assignedCoachId?: string
+  ids?: readonly string[]
+}): Promise<UserProfile[]> {
   if (where.ids) {
     if (where.ids.length === 0) return []
-    clauses.push(`id IN (${where.ids.map(() => '?').join(',')})`)
-    params.push(...where.ids)
+    const rows: UserRow[] = []
+    for (const ids of chunk(where.ids, 100)) {
+      const snaps = await db.getAll(...ids.map((id) => users().doc(id)))
+      for (const s of snaps) {
+        const row = docOf<UserDoc>(s)
+        if (row) rows.push(row)
+      }
+    }
+    return rows.sort(byName).map(toUserProfile)
   }
-  const sql = `SELECT ${COLUMNS} FROM users${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY role, last_name, first_name`
-  const rows = await query<UserRow>(sql, params, db)
-  return rows.map(toUserProfile)
+  let q: FirebaseFirestore.Query = users()
+  if (where.tenantId) q = q.where('tenantId', '==', where.tenantId)
+  if (where.role) q = q.where('role', '==', where.role)
+  if (where.assignedCoachId) q = q.where('assignedCoachId', '==', where.assignedCoachId)
+  const snap = await q.get()
+  return snap.docs
+    .map((d) => docOf<UserDoc>(d)!)
+    .sort(byName)
+    .map(toUserProfile)
 }
 
 export type NewUser = {
@@ -120,33 +127,44 @@ export type NewUser = {
   status?: UserStatus
 }
 
-export async function insertUser(u: NewUser, db: Db = pool): Promise<void> {
-  await execute(
-    `INSERT INTO users (id, tenant_id, role, first_name, last_name, email, password_hash, phone, title, bio, location,
-       joined_at, specialties, credentials, rating, sessions_delivered, assigned_coach_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      u.id,
-      u.tenantId,
-      u.role,
-      u.firstName,
-      u.lastName,
-      u.email.trim().toLowerCase(),
-      u.passwordHash,
-      u.phone ?? null,
-      u.title ?? null,
-      u.bio ?? null,
-      u.location ?? null,
-      u.joinedAt,
-      u.specialties ? JSON.stringify(u.specialties) : null,
-      u.credentials ? JSON.stringify(u.credentials) : null,
-      u.rating ?? null,
-      u.sessionsDelivered ?? null,
-      u.assignedCoachId ?? null,
-      u.status ?? 'active',
-    ],
-    db,
-  )
+function toDoc(u: NewUser): UserDoc {
+  const now = Ts.now()
+  return {
+    tenantId: u.tenantId,
+    role: u.role,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email.trim().toLowerCase(),
+    passwordHash: u.passwordHash,
+    phone: u.phone ?? null,
+    avatarUrl: null,
+    title: u.title ?? null,
+    bio: u.bio ?? null,
+    location: u.location ?? null,
+    joinedAt: u.joinedAt,
+    specialties: u.specialties ? [...u.specialties] : null,
+    credentials: u.credentials ? [...u.credentials] : null,
+    rating: u.rating ?? null,
+    sessionsDelivered: u.sessionsDelivered ?? null,
+    assignedCoachId: u.assignedCoachId ?? null,
+    status: u.status ?? 'active',
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+/**
+ * Creates the user and reserves the email in one transaction, so two
+ * concurrent sign-ups with the same address cannot both succeed.
+ */
+export async function insertUser(u: NewUser): Promise<void> {
+  const doc = toDoc(u)
+  await runTransaction(async (tx) => {
+    const emailRef = emails().doc(doc.email)
+    if ((await tx.get(emailRef)).exists) throw conflict('An account already exists for that email.', 'email_taken')
+    tx.create(emailRef, { userId: u.id })
+    tx.create(users().doc(u.id), doc)
+  })
 }
 
 export type UserPatch = Partial<{
@@ -162,38 +180,23 @@ export type UserPatch = Partial<{
   passwordHash: string
 }>
 
-const PATCH_COLUMNS: Record<keyof UserPatch, string> = {
-  firstName: 'first_name',
-  lastName: 'last_name',
-  phone: 'phone',
-  avatarUrl: 'avatar_url',
-  title: 'title',
-  bio: 'bio',
-  location: 'location',
-  assignedCoachId: 'assigned_coach_id',
-  status: 'status',
-  passwordHash: 'password_hash',
-}
-
-export async function updateUser(id: string, patch: UserPatch, db: Db = pool): Promise<void> {
-  const sets: string[] = []
-  const params: unknown[] = []
-  for (const [key, value] of Object.entries(patch) as [keyof UserPatch, unknown][]) {
-    if (value === undefined) continue
-    sets.push(`${PATCH_COLUMNS[key]} = ?`)
-    params.push(value)
-  }
-  if (sets.length === 0) return
-  params.push(id)
-  await execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params, db)
+export async function updateUser(id: string, patch: UserPatch, tx?: Tx): Promise<void> {
+  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+  if (Object.keys(clean).length === 0) return
+  const data = { ...clean, updatedAt: Ts.now() }
+  if (tx) tx.update(users().doc(id), data)
+  else await users().doc(id).update(data)
 }
 
 /** The coach new members are assigned to: the tenant's longest-serving active coach. */
-export async function findDefaultCoach(tenantId: string, db: Db = pool): Promise<string | null> {
-  const row = await queryOne<RowDataPacket & { id: string }>(
-    `SELECT id FROM users WHERE tenant_id = ? AND role = 'coach' AND status = 'active' ORDER BY joined_at, id LIMIT 1`,
-    [tenantId],
-    db,
-  )
-  return row?.id ?? null
+export async function findDefaultCoach(tenantId: string): Promise<string | null> {
+  const snap = await users().where('tenantId', '==', tenantId).where('role', '==', 'coach').where('status', '==', 'active').get()
+  const rows = snap.docs.map((d) => docOf<UserDoc>(d)!).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.id.localeCompare(b.id))
+  return rows[0]?.id ?? null
+}
+
+/** Live seat count: active members in the tenant (server-side aggregation). */
+export async function countActiveMembers(tenantId: string): Promise<number> {
+  const agg = await users().where('tenantId', '==', tenantId).where('role', '==', 'member').where('status', '==', 'active').count().get()
+  return agg.data().count
 }

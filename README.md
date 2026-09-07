@@ -10,19 +10,22 @@ in-memory adapter, and switches to the Node API in `server/` with one environmen
 
 ---
 
-## Backend (Node.js API + MySQL)
+## Backend (Node.js API + Cloud Firestore)
 
 The app is no longer demo-only: `server/` is a Node.js (Express 5) API on
-MySQL/MariaDB that implements every port in `src/domain/ports.ts` — auth,
-directory, specialists and booking, progress, catalogue, orders and payments,
-memberships, tenants, and the marketing forms. The front end talks to it through
+Cloud Firestore (Firebase project `beyondfit-cc69a`) that implements every
+port in `src/domain/ports.ts` — auth, directory, specialists and booking,
+progress, catalogue, orders and payments, memberships, tenants, and the
+marketing forms. The front end talks to it through
 `src/infrastructure/http/container.ts`; `VITE_API_MODE=http` is the default and
 `mock` keeps the in-memory adapter for UI work without a database.
 
 ```bash
-# terminal 1 — API (needs MySQL/MariaDB; see server/.env.example)
-cd server && cp .env.example .env && npm install && npm run db:seed -- --reset && npm run dev
-# terminal 2 — web, proxies /api to the API
+# terminal 1 — Firestore emulator (needs JDK 21+ on PATH; see server/README.md)
+cd server && npm install && npm run emulators
+# terminal 2 — API against the emulator, seeded with demo data
+cd server && cp .env.example .env && npm run db:seed -- --reset && npm run dev
+# terminal 3 — web, proxies /api to the API
 npm run dev
 ```
 
@@ -85,8 +88,8 @@ the API applies as well.
 Live on Vercel: **https://beyondfit.vercel.app** (Firebase Hosting mirror:
 https://beyondfit-cc69a.web.app)
 
-> The Vercel deployment runs with `VITE_API_MODE=mock` (in-browser demo data)
-> until the API is hosted on GoDaddy. See `server/README.md` → *Deploying on GoDaddy*.
+> The Vercel deployment runs with `VITE_API_MODE=mock` (in-browser demo data).
+> The production site and API go on GoDaddy: see `server/README.md` → *Deploying on GoDaddy*.
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

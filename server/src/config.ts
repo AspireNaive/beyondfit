@@ -14,14 +14,15 @@ const schema = z.object({
   HOST: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
-  DATABASE_URL: z.string().optional(),
-  DB_HOST: z.string().default('127.0.0.1'),
-  DB_PORT: z.coerce.number().int().default(3306),
-  DB_USER: z.string().default('root'),
-  DB_PASSWORD: z.string().default(''),
-  DB_NAME: z.string().default('kedem_life'),
-  DB_SSL: bool.default('false'),
-  DB_POOL_SIZE: z.coerce.number().int().positive().default(5),
+  /** Firebase project the API talks to (also the emulator's project id). */
+  FIREBASE_PROJECT_ID: z.string().default('beyondfit-cc69a'),
+  /** Service-account JSON, base64-encoded, for hosts outside Google Cloud (GoDaddy). */
+  FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+  /** Alternative: a path to the service-account JSON file. */
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
+  /** Set (e.g. 127.0.0.1:8085) to use the local Firestore emulator instead of the real database. */
+  FIRESTORE_EMULATOR_HOST: z.string().optional(),
+  FIRESTORE_DATABASE_ID: z.string().default('(default)'),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   ACCESS_TOKEN_TTL_HOURS: z.coerce.number().positive().default(12),
@@ -56,25 +57,18 @@ if (!parsed.success) {
 
 const env = parsed.data
 
-/** DATABASE_URL wins over the individual DB_* parts when both are present. */
-function databaseParts() {
-  if (!env.DATABASE_URL) {
-    return {
-      host: env.DB_HOST,
-      port: env.DB_PORT,
-      user: env.DB_USER,
-      password: env.DB_PASSWORD,
-      database: env.DB_NAME,
-    }
+type ServiceAccount = { projectId: string; clientEmail: string; privateKey: string }
+
+/** Decodes FIREBASE_SERVICE_ACCOUNT (base64 of the JSON key) into cert() input. */
+function serviceAccount(): ServiceAccount | null {
+  if (!env.FIREBASE_SERVICE_ACCOUNT) return null
+  const raw = env.FIREBASE_SERVICE_ACCOUNT.trim()
+  const json = raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')
+  const parsed = JSON.parse(json) as { project_id?: string; client_email?: string; private_key?: string }
+  if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT is not a service-account key (project_id, client_email, private_key)')
   }
-  const url = new URL(env.DATABASE_URL)
-  return {
-    host: url.hostname,
-    port: url.port ? Number(url.port) : 3306,
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: url.pathname.replace(/^\//, ''),
-  }
+  return { projectId: parsed.project_id, clientEmail: parsed.client_email, privateKey: parsed.private_key }
 }
 
 export const config = {
@@ -84,7 +78,12 @@ export const config = {
   port: env.PORT,
   host: env.HOST,
   logLevel: env.LOG_LEVEL,
-  db: { ...databaseParts(), ssl: env.DB_SSL, poolSize: env.DB_POOL_SIZE },
+  firebase: {
+    projectId: env.FIREBASE_PROJECT_ID,
+    databaseId: env.FIRESTORE_DATABASE_ID,
+    emulatorHost: env.FIRESTORE_EMULATOR_HOST,
+    serviceAccount: serviceAccount(),
+  },
   auth: {
     jwtSecret: env.JWT_SECRET,
     accessTtlSeconds: Math.round(env.ACCESS_TOKEN_TTL_HOURS * 3600),

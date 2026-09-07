@@ -1,6 +1,6 @@
 # Kedem Life API
 
-Node.js (Express 5) + MySQL/MariaDB backend for the Kedem Life web app. It
+Node.js (Express 5) + Cloud Firestore backend for the Kedem Life web app. It
 implements every port the front end calls (`src/domain/ports.ts` → HTTP adapter
 `src/infrastructure/http/container.ts`), so the web app switches from demo data
 to real data with one setting: `VITE_API_MODE=http`.
@@ -13,36 +13,58 @@ to real data with one setting: `VITE_API_MODE=http`.
 
 ```
 server/
-  migrations/        forward-only SQL, applied in name order (npm run db:migrate)
-  scripts/seed.ts    demo data — the same fixtures the mock adapter used
-  scripts/bootstrap.ts  production: one tenant + one admin from env, nothing else
+  scripts/seed.ts        demo data — the same fixtures the mock adapter used
+  scripts/bootstrap.ts   production: one tenant + one admin from env, nothing else
   src/
-    index.ts         process entry (PORT from env; works under Passenger / pm2 / node)
-    app.ts           middleware + route mounting; optional static serving of ../dist
-    config.ts        env → typed config, validated at boot
-    domain.ts        enums and response shapes (mirror of the front end's domain)
-    auth/            password hashing, JWT + refresh tokens, guards, /auth routes
-    modules/<name>/  repository.ts (SQL) · service.ts (rules) · routes.ts (HTTP + zod)
-    db/              mysql2 pool, transactions, migration runner
-    lib/             problem+json errors, typed route helper, logger, mailer
-  test/              vitest + supertest integration tests against a real database
+    index.ts             process entry (PORT from env; works under Passenger / pm2 / node)
+    app.ts               middleware + route mounting; optional static serving of ../dist
+    config.ts            env → typed config, validated at boot
+    domain.ts            enums and response shapes (mirror of the front end's domain)
+    auth/                password hashing, JWT + refresh tokens, guards, /auth routes
+    modules/<name>/      repository.ts (Firestore) · service.ts (rules) · routes.ts (HTTP + zod)
+    db/firestore.ts      Admin SDK client, collection names, transaction helpers
+    lib/                 problem+json errors, typed route helper, logger, mailer
+  test/                  vitest + supertest integration tests against the Firestore emulator
+../firestore.rules       closed to browsers — only this API (Admin SDK) reads and writes
+../firestore.indexes.json  composite indexes the queries need; deploy with `firebase deploy --only firestore`
 ```
 
-Conventions: SQL lives only in `repository.ts`; business rules and authorization
-only in `service.ts`; routes validate with zod and stay thin. Money is minor
-units + currency. Every `DATETIME` is UTC; `DATE` columns are calendar days.
-Errors are RFC 7807 `application/problem+json` (`detail` is user-facing,
-`code` is machine-readable, `errors` maps to form fields).
+Conventions: Firestore access lives only in `repository.ts`; business rules and
+authorization only in `service.ts`; routes validate with zod and stay thin.
+Money is minor units + currency. Timestamps are Firestore `Timestamp`s
+(UTC); calendar days are `YYYY-MM-DD` strings. Errors are RFC 7807
+`application/problem+json` (`detail` is user-facing, `code` is
+machine-readable, `errors` maps to form fields).
+
+### Data model (collections)
+
+| Collection | Document id | Notes |
+| --- | --- | --- |
+| `tenants` | id | `isDefault` marks the studio sign-ups land on |
+| `users` / `userEmails` | id / email | `userEmails` gives the unique-email guarantee Firestore lacks (created in the same transaction) |
+| `providers` | userId | bookable half of a coach; `hours[]` and `timeOff[]` embedded |
+| `appointments` / `slotLocks` | id / `${providerId}_${startsAtMs}` | the lock is created in the booking transaction, so one slot can never be sold twice |
+| `bodyMetrics` / `activity` | `${memberId}_${day}` | same-day logging is an overwrite by construction |
+| `goals` | memberId | |
+| `products` / `productSlugs` | id / slug | slug uniqueness via the lock document |
+| `orders` | id | lines embedded; `instructorIds[]` for the coach view; `counters/orders` hands out `KL-10001…` |
+| `payments`, `subscriptions` | id | |
+| `refreshTokens`, `passwordResetTokens` | sha256(token) | raw tokens are never stored |
+| `contactMessages`, `newsletterSubscribers` | id / email | |
 
 ## Run locally
 
-Requirements: Node 20 (`nvm use` in the repo root), a MySQL 8 / MariaDB 10.6+ server.
+Requirements: Node 20 (`nvm use` in the repo root) and, for the emulator, a
+JDK 21+ on your PATH (`brew install openjdk@21`, then
+`export PATH="$(brew --prefix openjdk@21)/bin:$PATH"` in that shell). Your
+system Java is not changed.
 
 ```bash
 cd server
-cp .env.example .env            # set DB_* and a real JWT_SECRET
+cp .env.example .env            # set a real JWT_SECRET; keep FIRESTORE_EMULATOR_HOST for local work
 npm install
-npm run db:seed -- --reset      # migrations + demo data (password for every demo user: kedemlife)
+npm run emulators               # terminal 1: Firestore emulator on 127.0.0.1:8085 (data kept in ../.firestore-emulator)
+npm run db:seed -- --reset      # terminal 2: demo data (password for every demo user: kedemlife)
 npm run dev                     # http://127.0.0.1:4000/api/health
 ```
 
@@ -50,16 +72,21 @@ Then in the repo root `npm run dev` — Vite proxies `/api` to the API, so the
 browser stays same-origin. Sign in with `member@kedemlife.app` / `kedemlife`
 (or coach@, admin@, manager@).
 
+To develop against the **real** Firestore instead of the emulator, remove
+`FIRESTORE_EMULATOR_HOST` from `.env` and set `FIREBASE_SERVICE_ACCOUNT` (see
+Configuration). `npm run db:seed -- --reset` then empties the real database —
+only do that on a project you are happy to wipe.
+
 Useful scripts:
 
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | tsx watch mode |
 | `npm run build` / `npm start` | compile to `dist/` and run it |
-| `npm run db:migrate` | apply pending migrations |
-| `npm run db:seed [-- --reset]` | demo data (`--reset` empties every table first) |
+| `npm run emulators` | Firestore emulator with persisted data |
+| `npm run db:seed [-- --reset]` | demo data (`--reset` empties every collection first) |
 | `npm run db:bootstrap` | production: create the default tenant + an `app_manager` from `BOOTSTRAP_*` |
-| `npm test` | integration suite (needs `kedem_life_test` on the same server; override with `TEST_DB_NAME`) |
+| `npm test` | starts the emulator, seeds it, runs the integration suite, stops it |
 
 ## Configuration
 
@@ -67,40 +94,44 @@ See `.env.example`; everything is validated in `src/config.ts`. The ones that ma
 
 | Variable | Notes |
 | --- | --- |
-| `DATABASE_URL` or `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME` | GoDaddy shows these under cPanel → MySQL Databases |
+| `FIREBASE_PROJECT_ID` | `beyondfit-cc69a` |
+| `FIREBASE_SERVICE_ACCOUNT` | base64 of the service-account JSON key (hosts outside Google Cloud, i.e. GoDaddy). Alternative: `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json` |
 | `JWT_SECRET` | ≥ 32 random chars; rotating it signs everyone out |
+| `SERVE_STATIC=true` | this process also serves the Vite build from `STATIC_DIR` (same origin, no CORS) |
 | `CORS_ORIGINS` | only when the site is on another origin (e.g. `https://beyondfit.vercel.app`) |
-| `SERVE_STATIC=true` | this process also serves the Vite build from `../dist` (same-origin, no CORS) |
 | `APP_URL` | where password-reset links point |
 | `TRUST_PROXY=1` | behind Passenger/Nginx/Apache so rate limits see real client IPs |
 | `SMTP_*` | GoDaddy relay `smtpout.secureserver.net:465`; without SMTP, reset links are logged instead |
 | `PAYMENT_PROVIDER=manual` | records payments as taken; see "What is stubbed" |
 
-## Deploying on GoDaddy
+## Deploying on GoDaddy (cPanel → Setup Node.js App)
 
-The database is always GoDaddy's MySQL. Where the API process runs depends on the plan:
+One Node process serves both the React build and `/api`, talking to Firestore
+over the internet with a service account. Nothing runs on Google's side except
+the database.
 
-**A. cPanel hosting with the Node.js selector (Web Hosting Plus / Deluxe+ on Linux)**
-1. Build locally: `cd server && npm run build`, and `npm run build` in the repo root for the site.
-2. Upload `server/` (without `node_modules`) and `dist/` to e.g. `~/kedem-api` and `~/kedem-api/dist`.
-3. cPanel → *Setup Node.js App* → Node 20, application root `kedem-api`, startup file `dist/index.js`, mode production. Add the env vars from the table above (`SERVE_STATIC=true`, `STATIC_DIR=../dist`, `TRUST_PROXY=1`, no `CORS_ORIGINS`).
-4. *Run NPM Install*, then in the app's terminal: `npm run db:migrate` and `npm run db:bootstrap` (or `npm run db:seed` for a demo).
-5. Point the domain at the app. One origin serves both the site and `/api`.
+1. **Firestore one-offs** (from this repo, once): `npx firebase deploy --only firestore --project beyondfit-cc69a` publishes the closed rules and the composite indexes. Indexes take a few minutes to build; queries that need one fail with a clear error until then.
+2. **Service-account key**: Firebase console → Project settings → Service accounts → *Generate new private key*. Keep the JSON file private; it is the API's password to the database.
+3. **Build locally**: `npm run build` in the repo root (site → `dist/`) and `cd server && npm run build` (API → `server/dist/`).
+4. **Upload**: `server/` without `node_modules` (package.json, package-lock.json, dist/, openapi.json) to e.g. `~/kedem-api`, and the site's `dist/` to `~/kedem-api/dist`.
+5. **cPanel → Setup Node.js App → Create application**: Node 20, application root `kedem-api`, application URL your domain, startup file `dist/index.js`, mode Production. Environment variables:
+   `NODE_ENV=production`, `FIREBASE_PROJECT_ID=beyondfit-cc69a`, `FIREBASE_SERVICE_ACCOUNT=<base64 of the key: base64 -i key.json | tr -d '\n'>`, `JWT_SECRET=<48 random bytes>`, `SERVE_STATIC=true`, `STATIC_DIR=./dist`, `TRUST_PROXY=1`, `APP_URL=https://your-domain`, and `SMTP_*` if you want reset emails.
+6. Click **Run NPM Install**, then in the app's terminal (or "Run JS script"): `npm run db:bootstrap` with `BOOTSTRAP_*` set, or `npm run db:seed` for the demo dataset.
+7. Restart the app. `https://your-domain/api/health` should answer `{"status":"ok"}` and the site should sign in against Firestore.
 
-**B. GoDaddy VPS / Dedicated**
-`npm ci --omit=dev && npm run build`, run with pm2 (`pm2 start dist/index.js --name kedem-api`), put Nginx or Apache in front with TLS, set `TRUST_PROXY=1`. Same env otherwise.
+Passenger supplies `PORT`; do not set it yourself. Rate limits are per process,
+which is fine for a single cPanel app.
 
-**C. Site stays on Vercel, API elsewhere** (interim)
-Set `VITE_API_URL=https://api.<your-domain>/api` and `VITE_API_MODE=http` on Vercel, add that origin to `connect-src` in `vercel.json`, and set `CORS_ORIGINS=https://beyondfit.vercel.app` on the API. Until an API host exists, keep `VITE_API_MODE=mock` on Vercel (that is the current setting).
-
-Remote access to GoDaddy MySQL from another host needs cPanel → *Remote MySQL* → add the API host's IP. Shared MySQL caps connections per user, so keep `DB_POOL_SIZE` small (5 is plenty).
+Other hosts work the same way: pm2 on a VPS, or Cloud Run / Firebase Cloud
+Functions (Blaze plan) where `applicationDefault()` credentials replace the key.
 
 ## Security notes
 
-- Passwords: bcrypt cost 12. Sessions: short-lived HS256 JWT + rotating opaque refresh tokens stored hashed; logout revokes the session's refresh token, a password reset revokes them all.
+- Passwords: bcrypt cost 12. Sessions: short-lived HS256 JWT + rotating opaque refresh tokens stored as hashes; logout revokes the session's refresh token, a password reset revokes them all.
 - Portal check: member credentials are refused at `/login/admin` even when valid.
 - Every list is scoped server-side from the token (never from a client-supplied id); cross-tenant reads return `null`/403.
-- Booking is serialised per provider inside a transaction and backed by a unique index on the live slot, so two people cannot take one slot.
+- Firestore rules deny all client access; only the API's service account can read or write.
+- Booking runs in a transaction that creates the slot lock document, so two people cannot take one slot.
 - Helmet headers, per-IP rate limits on credential and public-form endpoints, JSON bodies capped at 256 KB, `x-powered-by` off.
 
 ## What is stubbed (and where to plug in)
@@ -110,4 +141,4 @@ Remote access to GoDaddy MySQL from another host needs cPanel → *Remote MySQL*
 | Card payments | `PAYMENT_PROVIDER=manual` marks the order paid and records a payment with a card-style fee | implement `PaymentProvider` in `src/modules/orders/payment-provider.ts` for Stripe/Razorpay; keep orders `awaiting_payment` until the webhook |
 | Zoom / Meet links | not generated; phone consults get the provider's `tel:` number | Zoom or Google Calendar API in `src/modules/appointments/service.ts#joinUrlFor` |
 | Email | password-reset and contact notifications go out only when `SMTP_*` is set | set the GoDaddy SMTP relay |
-| Subscription renewals | `renews_at` is stored; nothing charges on that date | a scheduled job (cron on the host) that charges via the provider and advances `renews_at` |
+| Subscription renewals | `renewsAt` is stored; nothing charges on that date | a scheduled job (cPanel cron) that charges via the provider and advances `renewsAt` |

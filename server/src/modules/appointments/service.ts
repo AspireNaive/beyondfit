@@ -1,15 +1,18 @@
-import { withTransaction } from '../../db/pool.js'
+import { runTransaction } from '../../db/firestore.js'
 import { Role, type Appointment, type AppointmentStatus, type MeetingChannel, type UserProfile } from '../../domain.js'
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
-import { availabilityFor } from '../providers/service.js'
+import { dateIn } from '../providers/availability.js'
 import { findProviderRow } from '../providers/repository.js'
+import { availabilityFor } from '../providers/service.js'
+import { fullName } from '../users/repository.js'
 import {
   findAppointmentRow,
-  findOverlap,
   insertAppointment,
   listAppointmentRows,
+  listBookedRanges,
   setAppointmentStatus,
+  slotIsTaken,
   toAppointment,
   type AppointmentRow,
 } from './repository.js'
@@ -41,13 +44,11 @@ function joinUrlFor(channel: MeetingChannel, providerPhone: string | null): stri
 
 export async function book(member: UserProfile, input: BookInput, now = new Date()): Promise<Appointment> {
   const provider = await findProviderRow(input.providerId)
-  if (!provider || !provider.accepting_bookings) throw badRequest('That provider is no longer taking bookings.')
-  if (provider.tenant_id !== member.tenantId && member.role !== Role.AppManager) {
+  if (!provider || !provider.acceptingBookings) throw badRequest('That provider is no longer taking bookings.')
+  if (provider.tenantId !== member.tenantId && member.role !== Role.AppManager) {
     throw forbidden('That provider belongs to a different studio.')
   }
-
-  const channels = JSON.parse(typeof provider.channels === 'string' ? provider.channels : JSON.stringify(provider.channels)) as MeetingChannel[]
-  if (!channels.includes(input.channel)) {
+  if (!provider.channels.includes(input.channel)) {
     throw unprocessable('That provider does not offer sessions on that channel.', { channel: ['Not offered by this provider.'] })
   }
   if (!DURATIONS.includes(input.durationMinutes as (typeof DURATIONS)[number])) {
@@ -59,8 +60,7 @@ export async function book(member: UserProfile, input: BookInput, now = new Date
   if (startsAt.getTime() <= now.getTime()) throw conflict('That time has already passed. Pick another slot.')
 
   // The requested start must be one of the provider's published slots for that day.
-  const date = (await import('../providers/availability.js')).dateIn(startsAt, provider.timezone)
-  const slots = await availabilityFor(provider, date, now)
+  const slots = await availabilityFor(provider, dateIn(startsAt, provider.timezone), now)
   const slot = slots.find((s) => new Date(s.startsAt).getTime() === startsAt.getTime())
   if (!slot) throw unprocessable("That time is outside the provider's working hours.")
   if (!slot.available) throw conflict('That slot was just taken. Pick another time.')
@@ -69,39 +69,38 @@ export async function book(member: UserProfile, input: BookInput, now = new Date
   }
 
   const id = newId()
-  await withTransaction(async (conn) => {
-    // Serialise bookings per provider; the unique slot_key is the backstop.
-    await conn.query('SELECT user_id FROM providers WHERE user_id = ? FOR UPDATE', [provider.id])
-    const end = new Date(startsAt.getTime() + input.durationMinutes * 60_000)
-    if (await findOverlap(provider.id, startsAt, end, conn)) {
-      throw conflict('That slot was just taken. Pick another time.')
-    }
-    try {
-      await insertAppointment(
-        {
-          id,
-          tenantId: provider.tenant_id,
-          memberId: member.id,
-          providerId: provider.id,
-          discipline: provider.discipline,
-          channel: input.channel,
-          startsAt,
-          durationMinutes: input.durationMinutes,
-          status: 'confirmed',
-          priceMinor: provider.session_rate_minor,
-          currency: provider.currency,
-          joinUrl: joinUrlFor(input.channel, provider.phone),
-          notes: input.notes?.trim() || null,
-          memberGoal: input.goal?.trim() || null,
-        },
-        conn,
-      )
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ER_DUP_ENTRY') {
-        throw conflict('That slot was just taken. Pick another time.')
-      }
-      throw error
-    }
+  const end = new Date(startsAt.getTime() + input.durationMinutes * 60_000)
+  await runTransaction(async (tx) => {
+    // Reads first: the slot lock and any live booking that overlaps.
+    if (await slotIsTaken(provider.id, startsAt, tx)) throw conflict('That slot was just taken. Pick another time.', 'slot_taken')
+    const overlapping = await listBookedRanges(provider.id, startsAt, end, tx)
+    if (overlapping.length > 0) throw conflict('That slot was just taken. Pick another time.', 'slot_taken')
+
+    await insertAppointment(
+      {
+        id,
+        tenantId: provider.tenantId,
+        memberId: member.id,
+        memberName: fullName(member),
+        providerId: provider.id,
+        providerName: `${provider.firstName} ${provider.lastName}`.trim(),
+        discipline: provider.discipline,
+        channel: input.channel,
+        startsAt,
+        durationMinutes: input.durationMinutes,
+        status: 'confirmed',
+        priceMinor: provider.sessionRateMinor,
+        currency: provider.currency,
+        joinUrl: joinUrlFor(input.channel, provider.phone),
+        notes: input.notes?.trim() || null,
+        memberGoal: input.goal?.trim() || null,
+      },
+      tx,
+    )
+  }).catch((error: { code?: number }) => {
+    // ALREADY_EXISTS on the lock: someone committed the same slot first.
+    if (error.code === 6) throw conflict('That slot was just taken. Pick another time.', 'slot_taken')
+    throw error
   })
 
   const row = await findAppointmentRow(id)
@@ -110,9 +109,9 @@ export async function book(member: UserProfile, input: BookInput, now = new Date
 }
 
 function assertCanManage(viewer: UserProfile, row: AppointmentRow, allowMember: boolean) {
-  const isMember = allowMember && row.member_id === viewer.id
-  const isProvider = row.provider_id === viewer.id
-  const isAdmin = viewer.role === Role.Admin && row.tenant_id === viewer.tenantId
+  const isMember = allowMember && row.memberId === viewer.id
+  const isProvider = row.providerId === viewer.id
+  const isAdmin = viewer.role === Role.Admin && row.tenantId === viewer.tenantId
   const isPlatform = viewer.role === Role.AppManager
   if (!isMember && !isProvider && !isAdmin && !isPlatform) throw forbidden()
 }
@@ -122,9 +121,7 @@ export async function cancel(viewer: UserProfile, appointmentId: string): Promis
   if (!row) throw notFound('Appointment not found.')
   assertCanManage(viewer, row, true)
   if (row.status === 'cancelled') return toAppointment(row)
-  if (row.status === 'completed' || row.status === 'no_show') {
-    throw conflict('That session has already taken place.')
-  }
+  if (row.status === 'completed' || row.status === 'no_show') throw conflict('That session has already taken place.')
   await setAppointmentStatus(row.id, 'cancelled')
   return toAppointment((await findAppointmentRow(row.id))!)
 }
