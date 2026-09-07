@@ -2,7 +2,7 @@
 // lazy page components, which is exactly what the fast-refresh rule flags.
 // oxlint-disable react/only-export-components
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
 import { Permission, Role } from '@/domain/identity/model'
 import {
   RedirectIfAuthenticated,
@@ -34,6 +34,7 @@ const ContactPage = lazy(() => import('@/features/marketing/ContactPage'))
 const BookCallPage = lazy(() => import('@/features/marketing/BookCallPage'))
 const PlatformPage = lazy(() => import('@/features/marketing/PlatformPage'))
 const NotFoundPage = lazy(() => import('@/features/marketing/NotFoundPage'))
+const LaunchingSoonPage = lazy(() => import('@/features/marketing/LaunchingSoonPage'))
 
 // Commerce (public storefront)
 const ShopPage = lazy(() => import('@/features/shop/ShopPage'))
@@ -75,6 +76,75 @@ function RouteShell({ children }: { children: React.ReactNode }) {
 
 const shell = (element: React.ReactNode) => <RouteShell>{element}</RouteShell>
 
+/**
+ * Sign-in and sign-up stay behind the launching page until the app opens. Set
+ * VITE_AUTH_LAUNCHED=true in the hosting environment to route these paths to
+ * the real screens again; nothing else changes.
+ */
+const AUTH_LAUNCHED = import.meta.env.VITE_AUTH_LAUNCHED === 'true'
+
+const authRoutes: RouteObject[] = AUTH_LAUNCHED
+  ? [
+      {
+        element: (
+          <>
+            <ScrollToTop />
+            <AuthLayout />
+          </>
+        ),
+        children: [
+          // One component drives all four portals; the portal prop is what changes
+          // the copy, the accepted roles and the endpoint the .NET API sees.
+          {
+            path: 'login',
+            element: shell(
+              <RedirectIfAuthenticated>
+                <LoginPage portal={Role.Member} variant="general" />
+              </RedirectIfAuthenticated>,
+            ),
+          },
+          {
+            path: 'login/member',
+            element: shell(
+              <RedirectIfAuthenticated>
+                <LoginPage portal={Role.Member} variant="membership" />
+              </RedirectIfAuthenticated>,
+            ),
+          },
+          {
+            path: 'login/instructor',
+            element: shell(
+              <RedirectIfAuthenticated>
+                <LoginPage portal={Role.Coach} variant="instructor" />
+              </RedirectIfAuthenticated>,
+            ),
+          },
+          {
+            path: 'login/admin',
+            element: shell(
+              <RedirectIfAuthenticated>
+                <LoginPage portal={Role.Admin} variant="admin" />
+              </RedirectIfAuthenticated>,
+            ),
+          },
+          {
+            path: 'register',
+            element: shell(
+              <RedirectIfAuthenticated>
+                <RegisterPage />
+              </RedirectIfAuthenticated>,
+            ),
+          },
+          { path: 'forgot-password', element: shell(<ForgotPasswordPage />) },
+        ],
+      },
+    ]
+  : // `login/*` also matches /login itself.
+    ['login/*', 'register', 'forgot-password'].map((path) => ({
+      path,
+      element: <Navigate to="/launching-soon" replace />,
+    }))
+
 export const router = createBrowserRouter([
   {
     element: (
@@ -96,63 +166,12 @@ export const router = createBrowserRouter([
       { path: 'specialists', element: shell(<SpecialistsPage />) },
       { path: 'shop', element: shell(<ShopPage />) },
       { path: 'shop/:slug', element: shell(<ProductPage />) },
+      { path: 'launching-soon', element: shell(<LaunchingSoonPage />) },
       { path: '*', element: shell(<NotFoundPage />) },
     ],
   },
 
-  {
-    element: (
-      <>
-        <ScrollToTop />
-        <AuthLayout />
-      </>
-    ),
-    children: [
-      // One component drives all four portals; the portal prop is what changes
-      // the copy, the accepted roles and the endpoint the .NET API sees.
-      {
-        path: 'login',
-        element: shell(
-          <RedirectIfAuthenticated>
-            <LoginPage portal={Role.Member} variant="general" />
-          </RedirectIfAuthenticated>,
-        ),
-      },
-      {
-        path: 'login/member',
-        element: shell(
-          <RedirectIfAuthenticated>
-            <LoginPage portal={Role.Member} variant="membership" />
-          </RedirectIfAuthenticated>,
-        ),
-      },
-      {
-        path: 'login/instructor',
-        element: shell(
-          <RedirectIfAuthenticated>
-            <LoginPage portal={Role.Coach} variant="instructor" />
-          </RedirectIfAuthenticated>,
-        ),
-      },
-      {
-        path: 'login/admin',
-        element: shell(
-          <RedirectIfAuthenticated>
-            <LoginPage portal={Role.Admin} variant="admin" />
-          </RedirectIfAuthenticated>,
-        ),
-      },
-      {
-        path: 'register',
-        element: shell(
-          <RedirectIfAuthenticated>
-            <RegisterPage />
-          </RedirectIfAuthenticated>,
-        ),
-      },
-      { path: 'forgot-password', element: shell(<ForgotPasswordPage />) },
-    ],
-  },
+  ...authRoutes,
 
   {
     path: 'app',

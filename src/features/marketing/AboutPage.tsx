@@ -32,7 +32,7 @@ export default function AboutPage() {
       <PageHero
         eyebrow="About"
         title="Transforming underdogs into legends"
-        lead="BeyondFit started in one gym with one frustration: people were working hard against plans nobody had bothered to individualise. We built the team — and then the software — to fix that."
+        lead="Kedem Life started in one gym with one frustration: people were working hard against plans nobody had bothered to individualise. We built the team — and then the software — to fix that."
       />
 
       <section className="section">

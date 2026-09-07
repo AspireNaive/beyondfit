@@ -1,4 +1,4 @@
-# BeyondFit
+# Kedem Life
 
 A multi-tenant coaching platform (PaaS) for gyms and studios: a marketing site
 with a video-background homepage, four sign-in portals, 1:1 booking with
@@ -43,15 +43,19 @@ Other scripts:
 
 ### Demo accounts
 
-Every account uses the password **`beyondfit`**. Each sign-in screen also has
+> Sign-in is gated until launch: `/login`, `/register` and `/forgot-password`
+> redirect to `/launching-soon`. Set `VITE_AUTH_LAUNCHED=true` in the hosting
+> environment to open the real screens.
+
+Every account uses the password **`kedemlife`**. Each sign-in screen also has
 one-click buttons that fill the form for you.
 
 | Role | Email | Portal |
 | --- | --- | --- |
-| Member | `member@beyondfit.app` | `/login` or `/login/member` |
-| Coach | `coach@beyondfit.app` | `/login/instructor` |
-| Admin | `admin@beyondfit.app` | `/login/admin` |
-| App manager | `manager@beyondfit.app` | `/login/admin` |
+| Member | `member@kedemlife.app` | `/login` or `/login/member` |
+| Coach | `coach@kedemlife.app` | `/login/instructor` |
+| Admin | `admin@kedemlife.app` | `/login/admin` |
+| App manager | `manager@kedemlife.app` | `/login/admin` |
 
 Portals are enforced, not cosmetic: presenting member credentials at
 `/login/admin` is rejected even though the password is correct — the same rule
@@ -61,7 +65,8 @@ the .NET endpoint should apply.
 
 ## Deployment
 
-Live on Firebase Hosting: **https://beyondfit-cc69a.web.app**
+Live on Vercel: **https://beyondfit.vercel.app** (Firebase Hosting mirror:
+https://beyondfit-cc69a.web.app)
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

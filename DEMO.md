@@ -1,6 +1,6 @@
-# BeyondFit — Demo Guide
+# Kedem Life — Demo Guide
 
-**Live site:** https://beyondfit-cc69a.web.app
+**Live site:** https://beyondfit.vercel.app
 
 ## What it is
 
@@ -16,14 +16,18 @@ Four kinds of people log in, and each sees something different:
 
 ## How to log in
 
-Password for every account is **`beyondfit`**
+> Sign-in is gated until launch: `/login`, `/register` and `/forgot-password`
+> redirect to `/launching-soon`. Set `VITE_AUTH_LAUNCHED=true` in the hosting
+> environment to open the real screens.
+
+Password for every account is **`kedemlife`**
 
 | Who | Email |
 | --- | --- |
-| Member | `member@beyondfit.app` |
-| Coach | `coach@beyondfit.app` |
-| Admin | `admin@beyondfit.app` |
-| App manager | `manager@beyondfit.app` |
+| Member | `member@kedemlife.app` |
+| Coach | `coach@kedemlife.app` |
+| Admin | `admin@kedemlife.app` |
+| App manager | `manager@kedemlife.app` |
 
 You don't need to type these. Each login page has buttons that fill the form
 for you.

@@ -18,7 +18,7 @@ export function AuthLayout() {
     <div className="min-h-dvh lg:grid lg:grid-cols-2">
       <div className="flex min-h-dvh flex-col px-5 py-8 sm:px-10">
         <div className="flex items-center justify-between">
-          <Link to="/" aria-label="BeyondFit home">
+          <Link to="/" aria-label="Kedem Life home">
             <Logo />
           </Link>
           <Link
@@ -37,7 +37,7 @@ export function AuthLayout() {
         </div>
 
         <p className="text-center text-xs text-chalk-faint">
-          © {new Date().getFullYear()} BeyondFit ·{' '}
+          © {new Date().getFullYear()} Kedem Life · Product developed by AspireNaive ·{' '}
           <Link to="/contact" className="underline underline-offset-4 hover:text-chalk-dim">
             Need help?
           </Link>

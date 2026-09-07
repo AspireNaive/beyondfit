@@ -126,7 +126,7 @@ function Header() {
       )}
     >
       <div className="shell flex h-16 items-center justify-between gap-4 lg:h-20">
-        <Link to="/" className="shrink-0" aria-label="BeyondFit home">
+        <Link to="/" className="shrink-0" aria-label="Kedem Life home">
           <Logo />
         </Link>
 
@@ -305,7 +305,8 @@ function Footer() {
 
         <div className="mt-12 flex flex-col gap-5 border-t border-ink-700 pt-7 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-chalk-faint">
-            © {new Date().getFullYear()} BeyondFit. P.O. Box 174, Pine Bush, NY 12566.
+            © {new Date().getFullYear()} Kedem Life. All rights reserved. Product developed by
+            AspireNaive.
           </p>
           <div className="flex items-center gap-1">
             {[

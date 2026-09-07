@@ -159,7 +159,7 @@ export default function ProductPage() {
                 ? 'Instant access — no shipping'
                 : 'Free shipping over $125, flat $7.95 below',
               '30-day returns, no questions',
-              product.instructorId ? 'Written by a BeyondFit coach' : 'Third-party tested',
+              product.instructorId ? 'Written by a Kedem Life coach' : 'Third-party tested',
             ].map((item) => (
               <li key={item} className="flex items-center gap-2.5 text-sm text-chalk-dim">
                 {product.digital ? (

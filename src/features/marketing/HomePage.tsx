@@ -104,7 +104,7 @@ export default function HomePage() {
       <section id="approach" className="section">
         <div className="shell">
           <SectionHeading
-            eyebrow="The BeyondFit approach"
+            eyebrow="The Kedem Life approach"
             title="One team. One plan. One place to see it all."
             lead="Most people are not short of effort — they are short of a coherent plan. We integrate training, nutrition, health and mindset instead of handing you four disconnected opinions."
           />
@@ -239,7 +239,7 @@ export default function HomePage() {
       <section className="section border-t border-ink-700 bg-ink-900/40">
         <div className="shell">
           <SectionHeading
-            eyebrow="Why BeyondFit"
+            eyebrow="Why Kedem Life"
             title="The results members actually talk about"
           />
           <div className="mt-10">

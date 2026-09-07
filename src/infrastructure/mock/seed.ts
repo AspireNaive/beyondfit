@@ -107,7 +107,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Mara',
     lastName: 'Whitfield',
-    email: 'coach@beyondfit.app',
+    email: 'coach@kedemlife.app',
     phone: '+1 (845) 555-0142',
     title: 'Head Strength Coach',
     bio: 'Fifteen years turning post-injury athletes back into competitors. Obsessed with technique, unimpressed by ego lifting.',
@@ -124,7 +124,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Devon',
     lastName: 'Achebe',
-    email: 'devon@beyondfit.app',
+    email: 'devon@kedemlife.app',
     title: 'Performance Coach',
     bio: 'Speed, power and conditioning for field-sport athletes. Believes conditioning should be earned, not endured.',
     location: 'Newburgh, NY',
@@ -140,7 +140,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Priya',
     lastName: 'Raghunathan',
-    email: 'priya@beyondfit.app',
+    email: 'priya@kedemlife.app',
     title: 'Registered Dietitian',
     bio: 'Nutrition without the misery. Builds plans around the food you already eat and the schedule you actually have.',
     location: 'Remote',
@@ -156,7 +156,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Tomás',
     lastName: 'Delgado',
-    email: 'tomas@beyondfit.app',
+    email: 'tomas@kedemlife.app',
     title: 'Physiotherapist, DPT',
     bio: 'Movement screening and pain resolution. Finds the thing upstream that is actually causing your knee to complain.',
     location: 'Middletown, NY',
@@ -172,7 +172,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Anke',
     lastName: 'Sørensen',
-    email: 'anke@beyondfit.app',
+    email: 'anke@kedemlife.app',
     title: 'Sports Physician, MD',
     bio: 'Bloodwork, hormones and the boring clinical detail that decides whether your training actually works.',
     location: 'Remote',
@@ -188,7 +188,7 @@ const coachSeeds: SeedUser[] = [
     role: Role.Coach,
     firstName: 'Jae',
     lastName: 'Lindqvist',
-    email: 'jae@beyondfit.app',
+    email: 'jae@kedemlife.app',
     title: 'Mental Performance Coach',
     bio: 'Competition nerves, consistency and the gap between what you can do in training and what you do on the day.',
     location: 'Remote',
@@ -232,7 +232,7 @@ const memberSeeds: SeedUser[] = Array.from({ length: 24 }, (_, i) => {
     firstName: first,
     lastName: last,
     // The first member is the demo login everyone signs in with.
-    email: i === 0 ? 'member@beyondfit.app' : `${first.toLowerCase()}.${last.toLowerCase()}@example.com`,
+    email: i === 0 ? 'member@kedemlife.app' : `${first.toLowerCase()}.${last.toLowerCase()}@example.com`,
     phone: `+1 (845) 555-0${(200 + i).toString().padStart(3, '0')}`,
     title: pick(memberGoals),
     bio: 'Member since joining the transformation programme.',
@@ -249,7 +249,7 @@ const staffSeeds: SeedUser[] = [
     role: Role.Admin,
     firstName: 'Rosalind',
     lastName: 'Park',
-    email: 'admin@beyondfit.app',
+    email: 'admin@kedemlife.app',
     title: 'Studio Director',
     bio: 'Runs Ironworks Performance: billing, staffing and the things nobody else wants to own.',
     location: 'Pine Bush, NY',
@@ -261,9 +261,9 @@ const staffSeeds: SeedUser[] = [
     role: Role.AppManager,
     firstName: 'Idris',
     lastName: 'Bello',
-    email: 'manager@beyondfit.app',
+    email: 'manager@kedemlife.app',
     title: 'Platform Operations',
-    bio: 'Looks after every studio on BeyondFit — provisioning, plan limits and platform health.',
+    bio: 'Looks after every studio on Kedem Life — provisioning, plan limits and platform health.',
     location: 'Remote',
     joinedAt: '2023-06-01',
     status: 'active',
@@ -282,13 +282,13 @@ export const findUserByEmail = (email: string) =>
   USERS.find((u) => u.email.toLowerCase() === email.trim().toLowerCase())
 
 /** Every demo account uses this password. */
-export const DEMO_PASSWORD = 'beyondfit'
+export const DEMO_PASSWORD = 'kedemlife'
 
 export const DEMO_ACCOUNTS: readonly { role: Role; email: string; label: string }[] = [
-  { role: Role.Member, email: 'member@beyondfit.app', label: 'Member' },
-  { role: Role.Coach, email: 'coach@beyondfit.app', label: 'Coach' },
-  { role: Role.Admin, email: 'admin@beyondfit.app', label: 'Admin' },
-  { role: Role.AppManager, email: 'manager@beyondfit.app', label: 'App Manager' },
+  { role: Role.Member, email: 'member@kedemlife.app', label: 'Member' },
+  { role: Role.Coach, email: 'coach@kedemlife.app', label: 'Coach' },
+  { role: Role.Admin, email: 'admin@kedemlife.app', label: 'Admin' },
+  { role: Role.AppManager, email: 'manager@kedemlife.app', label: 'App Manager' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -589,7 +589,7 @@ export const PRODUCTS: Product[] = [
   {
     id: id<'Product'>('p-8'),
     slug: 'training-tee',
-    name: 'BeyondFit Training Tee',
+    name: 'Kedem Life Training Tee',
     tagline: 'Heavyweight cotton, cut for lifting',
     description: 'Does not cling, does not ride up on overhead work. Black or bone.',
     category: ProductCategory.Apparel,

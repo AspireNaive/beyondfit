@@ -7,7 +7,7 @@ import { FaqList, SectionHeading } from './components'
 
 const CHANNELS = [
   { icon: Phone, label: 'Call the studio', value: '+1 (845) 555-0142', href: 'tel:+18455550142' },
-  { icon: Mail, label: 'Email', value: 'hello@beyondfit.app', href: 'mailto:hello@beyondfit.app' },
+  { icon: Mail, label: 'Email', value: 'hello@kedemlife.app', href: 'mailto:hello@kedemlife.app' },
   { icon: MapPin, label: 'Post', value: 'P.O. Box 174, Pine Bush, NY 12566' },
   { icon: MessageSquare, label: 'Members', value: 'Message your coach in the app', href: '/app' },
 ]
@@ -31,7 +31,7 @@ export default function ContactPage() {
       <PageHero
         eyebrow="Contact"
         title="Talk to a human"
-        lead="Questions about a programme, the testing, or running BeyondFit at your own studio — this reaches the team directly, not a ticket queue."
+        lead="Questions about a programme, the testing, or running Kedem Life at your own studio — this reaches the team directly, not a ticket queue."
       />
 
       <section className="section">
@@ -66,7 +66,7 @@ export default function ContactPage() {
                   <option value="testing">Root cause testing</option>
                   <option value="specialists">Booking a specialist</option>
                   <option value="orders">An order or payment</option>
-                  <option value="platform">Running BeyondFit at my studio</option>
+                  <option value="platform">Running Kedem Life at my studio</option>
                   <option value="other">Something else</option>
                 </Select>
                 <Textarea

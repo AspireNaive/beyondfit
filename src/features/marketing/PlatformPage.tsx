@@ -5,7 +5,7 @@ import { PageHero } from './PageHero'
 import { CtaBand, SectionHeading } from './components'
 
 /**
- * The PaaS side of the product: BeyondFit sold to studios rather than to
+ * The PaaS side of the product: Kedem Life sold to studios rather than to
  * members. Plans mirror `Tenant['plan']` in the identity domain, so what is
  * advertised here and what the app enforces cannot drift.
  */
@@ -98,7 +98,7 @@ export default function PlatformPage() {
   return (
     <>
       <PageHero
-        eyebrow="BeyondFit for studios"
+        eyebrow="Kedem Life for studios"
         title="Run your studio on the platform your members already love"
         lead="Everything on this site — booking, progress tracking, consultations, storefront, payments — delivered as a service for your gym, under your brand."
       >

@@ -17,7 +17,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Replace with the real telemetry sink (App Insights / Sentry) once wired.
-    console.error('[BeyondFit] Unhandled render error', error, info.componentStack)
+    console.error('[Kedem Life] Unhandled render error', error, info.componentStack)
   }
 
   render() {

@@ -138,7 +138,7 @@ export function AppLayout() {
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-ink-700 bg-ink-900 lg:flex">
         <div className="flex h-16 items-center border-b border-ink-700 px-5">
-          <Link to="/" aria-label="BeyondFit home">
+          <Link to="/" aria-label="Kedem Life home">
             <Logo />
           </Link>
         </div>
@@ -189,7 +189,7 @@ export function AppLayout() {
             <Menu className="size-5" />
           </button>
 
-          <Link to="/" className="lg:hidden" aria-label="BeyondFit home">
+          <Link to="/" className="lg:hidden" aria-label="Kedem Life home">
             <Logo compact />
           </Link>
 

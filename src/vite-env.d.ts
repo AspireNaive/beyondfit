@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_MOCK_LATENCY?: string
   /** Optional hero video override, e.g. a CDN URL. */
   readonly VITE_HERO_VIDEO_URL?: string
+  /** 'true' opens the real sign-in/sign-up screens; unset, they redirect to /launching-soon. */
+  readonly VITE_AUTH_LAUNCHED?: string
 }
 
 interface ImportMeta {
