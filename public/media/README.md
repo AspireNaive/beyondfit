@@ -64,3 +64,12 @@ It is skipped entirely when:
 That last one is deliberate: a background video is decoration, and a phone on a
 metered plan should not pay for it. Verified — on a 390px viewport the browser
 makes **zero** requests for these files.
+
+# Logo
+
+`kedem_logo.jpeg` is the supplied artwork (1254×1254, mark on a black
+backdrop). `kedem_logo.png` is what the `Logo` component actually renders: the
+same image with the black turned into alpha (`alpha = max(r,g,b)`, colour
+un-premultiplied), trimmed to the artwork and padded back to a 512×512 square.
+Composited over black it is pixel-identical to the JPEG; over the site's
+dark surfaces it behaves like a `screen` blend, so no square edge shows.
