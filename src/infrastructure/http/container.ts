@@ -41,7 +41,7 @@ const readSession = (): AuthSession | null => {
 
 const readToken = (): string | null => readSession()?.accessToken ?? null
 
-export function createHttpContainer(baseUrl = import.meta.env.VITE_API_URL ?? '/api'): Container {
+export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL ?? '/api'): Container {
   const api = new ApiClient({
     baseUrl,
     getToken: readToken,
