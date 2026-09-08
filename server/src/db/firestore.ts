@@ -33,7 +33,7 @@ function app(): App {
 
 export const db: Firestore = (() => {
   const firestore = getFirestore(app(), config.firebase.databaseId)
-  firestore.settings({ ignoreUndefinedProperties: true })
+  firestore.settings({ ignoreUndefinedProperties: true, preferRest: config.firebase.preferRest })
   return firestore
 })()
 

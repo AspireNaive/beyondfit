@@ -23,6 +23,8 @@ const schema = z.object({
   /** Set (e.g. 127.0.0.1:8085) to use the local Firestore emulator instead of the real database. */
   FIRESTORE_EMULATOR_HOST: z.string().optional(),
   FIRESTORE_DATABASE_ID: z.string().default('(default)'),
+  /** Use HTTPS/REST instead of gRPC for Firestore — for hosts that only allow plain HTTP(S) egress (GoDaddy). */
+  FIRESTORE_PREFER_REST: bool.default('false'),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   ACCESS_TOKEN_TTL_HOURS: z.coerce.number().positive().default(12),
@@ -82,6 +84,7 @@ export const config = {
     projectId: env.FIREBASE_PROJECT_ID,
     databaseId: env.FIRESTORE_DATABASE_ID,
     emulatorHost: env.FIRESTORE_EMULATOR_HOST,
+    preferRest: env.FIRESTORE_PREFER_REST,
     serviceAccount: serviceAccount(),
   },
   auth: {
