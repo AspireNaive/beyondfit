@@ -85,13 +85,17 @@ the API applies as well.
 
 ## Deployment
 
-Live on Vercel: **https://beyondfit.vercel.app** (Firebase Hosting mirror:
-https://beyondfit-cc69a.web.app)
+Live on GoDaddy Node.js Hosting: **https://kedemlife.com** — and on Vercel:
+**https://beyondfit.vercel.app** (Firebase Hosting mirror: https://beyondfit-cc69a.web.app).
+Both talk to the same Firestore database.
 
-> On Vercel the same API runs as a serverless function (`api/index.ts`, rewritten
-> from `/api/*`) against the real Firestore, so the live site uses real data.
-> The GoDaddy deployment (site + API in one Node process) is described in
-> `server/README.md` → *Deploying on GoDaddy*.
+> **GoDaddy** builds from `main` on every push (`npm run build`, then `npm start`).
+> `npm start` runs the root `server.js`: one Node process that serves `dist/`
+> and the API under `/api`. Setup and the required secrets are in
+> `server/README.md` → *Deploying on GoDaddy Node.js Hosting*.
+>
+> **Vercel** serves `dist/` from its CDN and runs the same Express app as a
+> serverless function (`api/index.ts`, rewritten from `/api/*`).
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

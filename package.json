@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "server.js",
   "engines": {
     "node": ">=20.19.0"
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:api",
     "lint": "oxlint",
     "preview": "vite preview",
     "typecheck": "tsc -b",
@@ -17,36 +18,35 @@
     "deploy:preview": "firebase hosting:channel:deploy preview --expires 7d",
     "serve:prod": "firebase emulators:start --only hosting",
     "start": "node server.js",
-    "package:azure": "npm run build && node scripts/package-azure.mjs",
     "dev:api": "npm --prefix server run dev",
-    "build:api": "npm --prefix server run build",
+    "build:api": "npm run build -w server",
     "test:api": "npm --prefix server test",
     "db:seed": "npm --prefix server run db:seed -- --reset"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.101.4",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "tailwind-merge": "^3.6.0",
-    "zustand": "^5.0.14"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
-    "firebase-tools": "^15.26.0",
-    "oxlint": "^1.75.0",
     "rollup-plugin-visualizer": "^6.0.11",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
-    "vite-plugin-compression2": "^2.5.3"
+    "vite-plugin-compression2": "^2.5.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.26.0",
+    "oxlint": "^1.75.0"
   },
   "workspaces": [
     "server"

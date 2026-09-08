@@ -16,7 +16,7 @@ server/
   scripts/seed.ts        demo data — the same fixtures the mock adapter used
   scripts/bootstrap.ts   production: one tenant + one admin from env, nothing else
   src/
-    index.ts             process entry (PORT from env; works under Passenger / pm2 / node)
+    index.ts             process entry (PORT from env); ../server.js wraps it for GoDaddy Node.js Hosting
     app.ts               middleware + route mounting; optional static serving of ../dist
     config.ts            env → typed config, validated at boot
     domain.ts            enums and response shapes (mirror of the front end's domain)
@@ -101,29 +101,51 @@ See `.env.example`; everything is validated in `src/config.ts`. The ones that ma
 | `CORS_ORIGINS` | only when the site is on another origin (e.g. `https://beyondfit.vercel.app`) |
 | `APP_URL` | where password-reset links point |
 | `TRUST_PROXY=1` | behind Passenger/Nginx/Apache so rate limits see real client IPs |
+| `FIRESTORE_PREFER_REST=true` | Firestore over HTTPS/REST instead of gRPC, for hosts that only allow plain HTTP(S) egress (set by `server.js` on GoDaddy) |
 | `SMTP_*` | GoDaddy relay `smtpout.secureserver.net:465`; without SMTP, reset links are logged instead |
 | `PAYMENT_PROVIDER=manual` | records payments as taken; see "What is stubbed" |
 
-## Deploying on GoDaddy (cPanel → Setup Node.js App)
+## Deploying on GoDaddy Node.js Hosting
 
-One Node process serves both the React build and `/api`, talking to Firestore
-over the internet with a service account. Nothing runs on Google's side except
-the database.
+The live site (kedemlife.com) runs on [GoDaddy Node.js Hosting](https://www.godaddy.com/hosting/nodejs):
+the `AspireNaive/beyondfit` repository is connected, and every push to `main`
+rebuilds and redeploys. The platform runs, from the repo root, a production
+install (no `devDependencies`), then `npm run build`, then `npm start`, on
+Node.js 22, and supplies `PORT`.
 
-1. **Firestore one-offs** (from this repo, once): `npx firebase deploy --only firestore --project beyondfit-cc69a` publishes the closed rules and the composite indexes. Indexes take a few minutes to build; queries that need one fail with a clear error until then.
-2. **Service-account key**: Firebase console → Project settings → Service accounts → *Generate new private key*. Keep the JSON file private; it is the API's password to the database.
-3. **Build locally**: `npm run build` in the repo root (site → `dist/`) and `cd server && npm run build` (API → `server/dist/`).
-4. **Upload**: `server/` without `node_modules` (package.json, package-lock.json, dist/, openapi.json) to e.g. `~/kedem-api`, and the site's `dist/` to `~/kedem-api/dist`.
-5. **cPanel → Setup Node.js App → Create application**: Node 20, application root `kedem-api`, application URL your domain, startup file `dist/index.js`, mode Production. Environment variables:
-   `NODE_ENV=production`, `FIREBASE_PROJECT_ID=beyondfit-cc69a`, `FIREBASE_SERVICE_ACCOUNT=<base64 of the key: base64 -i key.json | tr -d '\n'>`, `JWT_SECRET=<48 random bytes>`, `SERVE_STATIC=true`, `STATIC_DIR=./dist`, `TRUST_PROXY=1`, `APP_URL=https://your-domain`, and `SMTP_*` if you want reset emails.
-6. Click **Run NPM Install**, then in the app's terminal (or "Run JS script"): `npm run db:bootstrap` with `BOOTSTRAP_*` set, or `npm run db:seed` for the demo dataset.
-7. Restart the app. `https://your-domain/api/health` should answer `{"status":"ok"}` and the site should sign in against Firestore.
+- `npm run build` compiles the site (`dist/`) and the API (`server/dist/`).
+- `npm start` runs the root `server.js`, which starts the API as **one process
+  that also serves the site**, so `/api` is same-origin and there is no CORS.
+  It defaults `NODE_ENV=production`, `SERVE_STATIC=true`, `TRUST_PROXY=1` and
+  `FIRESTORE_PREFER_REST=true` (only HTTP/HTTPS egress is allowed on the
+  platform; REST is plain HTTPS). An explicit variable in the dashboard wins.
+- Everything the build or start needs is in `dependencies` (TypeScript, Vite
+  and its plugins, the `@types/*` the compile needs); `devDependencies` hold
+  only local tooling (tests, emulator, linter).
 
-Passenger supplies `PORT`; do not set it yourself. Rate limits are per process,
-which is fine for a single cPanel app.
+Secrets go in the app's **Settings → Manage Secrets** as `.env`-style lines:
 
-Other hosts work the same way: pm2 on a VPS, or Cloud Run / Firebase Cloud
-Functions (Blaze plan) where `applicationDefault()` credentials replace the key.
+```
+FIREBASE_PROJECT_ID=beyondfit-cc69a
+FIREBASE_SERVICE_ACCOUNT=<base64 of the service-account key: base64 -i key.json | tr -d '\n'>
+JWT_SECRET=<48 random bytes>
+APP_URL=https://kedemlife.com
+```
+
+Add them **before** merging a change that touches `start`: the API exits at
+boot when Firestore is unreachable, and the platform would keep restarting it.
+`https://kedemlife.com/api/health` answering `{"status":"ok"}` means the API is
+up; the site signs in against the same Firestore database Vercel uses.
+
+Platform limits that matter here: outbound traffic is HTTP/HTTPS only, so
+external SMTP does not work — leave `SMTP_*` unset (reset links are logged)
+until the mailer is moved to the platform's email gateway. `db:seed` and
+`db:bootstrap` need `tsx` (a dev dependency): run them from a laptop, never on
+the platform.
+
+Other single-process hosts (cPanel Passenger, pm2 on a VPS) work the same way:
+build, then `npm start` with the variables above; Cloud Run / Cloud Functions
+can drop `FIREBASE_SERVICE_ACCOUNT` and use `applicationDefault()` credentials.
 
 ## Security notes
 
