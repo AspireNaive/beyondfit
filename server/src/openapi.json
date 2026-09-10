@@ -2210,7 +2210,7 @@
         ],
         "operationId": "listPosts",
         "summary": "Public blog feed",
-        "description": "Public. Published posts only, newest publishedAt first, paged.",
+        "description": "Public. Published posts only, newest publishedAt first, paged. `tenant` gives a studio its own blog and `author` a coach theirs; `query` searches title, summary, tags and the article body.",
         "security": [],
         "parameters": [
           {
@@ -2222,6 +2222,16 @@
               "maxLength": 80
             },
             "description": "Only posts from this studio (slug)."
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Only posts by this author (user id)."
           },
           {
             "name": "tag",
@@ -2241,7 +2251,7 @@
               "type": "string",
               "maxLength": 80
             },
-            "description": "Substring match on title, excerpt or tags."
+            "description": "Substring match on title, summary, tags or the article body."
           },
           {
             "name": "page",

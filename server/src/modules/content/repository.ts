@@ -90,21 +90,51 @@ export function readingMinutes(blocks: readonly PostBlock[]): number {
 
 export type PublicFilter = {
   tenantSlug?: string | undefined
+  authorId?: string | undefined
   tag?: string | undefined
   query?: string | undefined
   page: number
   pageSize: number
 }
 
+/** Every human-readable string in the body, for search. */
+function blockText(blocks: readonly PostBlock[]): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'heading':
+      case 'paragraph':
+        parts.push(block.text)
+        break
+      case 'quote':
+        parts.push(block.text, block.attribution ?? '')
+        break
+      case 'list':
+        parts.push(...block.items)
+        break
+      case 'image':
+        parts.push(block.alt, block.caption ?? '')
+        break
+      case 'video':
+        parts.push(block.caption ?? '')
+        break
+    }
+  }
+  return parts.join(' ')
+}
+
+/** Title, summary, tags and the article body itself. */
 const matchesQuery = (row: PostRow, needle: string) =>
   row.title.toLowerCase().includes(needle) ||
   row.excerpt.toLowerCase().includes(needle) ||
-  row.tagsLower.some((t) => t.includes(needle))
+  row.tagsLower.some((t) => t.includes(needle)) ||
+  blockText(row.blocks).toLowerCase().includes(needle)
 
 /** Published posts, newest first. Text search is in-memory over the filtered set. */
 export async function listPublished(filter: PublicFilter): Promise<Page<Post>> {
   let q: FirebaseFirestore.Query = posts().where('status', '==', 'published')
   if (filter.tenantSlug) q = q.where('tenantSlug', '==', filter.tenantSlug.trim().toLowerCase())
+  if (filter.authorId) q = q.where('authorId', '==', filter.authorId)
   if (filter.tag) q = q.where('tagsLower', 'array-contains', filter.tag.trim().toLowerCase())
   q = q.orderBy('publishedAt', 'desc')
 

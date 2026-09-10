@@ -63,13 +63,15 @@ const canManage = (user: AuthUser, post: Pick<Post, 'authorId' | 'tenantId'>) =>
     (user.role === Role.Admin && user.tenantId === post.tenantId) ||
     post.authorId === user.id)
 
-/** GET /posts — public feed, newest first, paged. */
+/** GET /posts — public feed, newest first, paged. `tenant` gives a studio its
+ *  own blog, `author` a coach theirs; `query` searches title, summary, tags and body. */
 postsRouter.get(
   '/',
   route(
     {
       query: z.object({
         tenant: z.string().trim().max(80).optional(),
+        author: z.string().trim().max(80).optional(),
         tag: z.string().trim().max(30).optional(),
         query: z.string().trim().max(80).optional(),
         page: z.coerce.number().int().min(1).default(1),
@@ -79,6 +81,7 @@ postsRouter.get(
     ({ query }) =>
       content.listPublished({
         tenantSlug: query.tenant,
+        authorId: query.author,
         tag: query.tag,
         query: query.query,
         page: query.page,

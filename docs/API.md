@@ -179,8 +179,10 @@ Public storefront reads; writes need `catalog:write` (admin, app_manager).
 
 ## Content (blog)
 
-Articles written by coaches and studio staff, readable by anyone. Reads are
-public; writes need `content:write` (coach, admin, app_manager). Ownership:
+Articles written by coaches and studio staff, readable by anyone — no token
+needed. Stored in Firestore (`posts`, plus `postSlugs` for link uniqueness).
+Every studio (`?tenant=`) and every coach (`?author=`) has their own feed.
+Reads are public; writes need `content:write` (coach, admin, app_manager). Ownership:
 a **coach** manages only posts they wrote, an **admin** every post in their
 studio, an **app_manager** every post. A post body is a list of typed blocks —
 `{ type: "heading" | "paragraph", text }`, `{ type: "image", url, alt, caption? }`,
@@ -191,7 +193,7 @@ else as a link.
 
 | Method | Path | Auth | Purpose | Notes |
 |---|---|---|---|---|
-| GET | `/posts` | public | The feed | Query `tenant?` (studio slug), `tag?` (case-insensitive), `query?` (substring of title, excerpt or tags), `page?=1`, `pageSize?=9` (1–50). Published posts only, newest `publishedAt` first → `{ items: Post[], total, page, pageSize }`. |
+| GET | `/posts` | public | The feed | Query `tenant?` (studio slug — that studio's own blog), `author?` (user id — that coach's own blog), `tag?` (case-insensitive), `query?` (substring of title, summary, tags **or the article body**), `page?=1`, `pageSize?=9` (1–50). Published posts only, newest `publishedAt` first → `{ items: Post[], total, page, pageSize }`. |
 | GET | `/posts/mine` | bearer, `content:write` | Posts I manage | Drafts included, most recently edited first → `Post[]`. Scope by role as above. |
 | GET | `/posts/{slug}` | public | One post by **slug** | 200 `Post` **or `null`**. Drafts are `null` unless the bearer may manage the post. |
 | POST | `/posts` | bearer, `content:write` | Create | Body `{ title (3–160), slug, excerpt (10–300), blocks (1–200), tags?=[] (≤8), coverImageUrl?, status?="draft" }` → 201 `Post`. Author and studio come from the token. 409 `slug_taken`. |
@@ -262,4 +264,5 @@ ids: tenant `t-ironworks` (slug `ironworks`), member `u-member-1`, coach /
 provider `u-coach-mara`, products `p-1` … `p-12` (`p-9`, slug
 `membership-performance`, is the membership), blog posts `post-zone-2`,
 `post-protein`, `post-knee`, `post-sleep`, `post-open-day` (published) and
-`post-golf-draft` (a draft by `u-coach-devon`).
+`post-golf-draft` (a draft by `u-coach-devon`). `npm run db:seed:posts` adds
+just the blog posts to a database that already has studios and people.

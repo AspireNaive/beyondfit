@@ -44,7 +44,8 @@ export const queryKeys = {
   payments: () => ['payments'] as const,
   subscriptions: () => ['subscriptions'] as const,
   tenants: () => ['tenants'] as const,
-  posts: (filter: { tenantSlug?: string; tag?: string; query?: string }) => ['posts', filter] as const,
+  posts: (filter: { tenantSlug?: string; authorId?: string; tag?: string; query?: string }) =>
+    ['posts', filter] as const,
   post: (slug: string) => ['post', slug] as const,
   managedPosts: (viewerId: string) => ['managed-posts', viewerId] as const,
 } as const

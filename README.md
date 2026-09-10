@@ -30,22 +30,30 @@ cd server && cp .env.example .env && npm run db:seed -- --reset && npm run dev
 npm run dev
 ```
 
-Root shortcuts: `npm run dev:api`, `npm run test:api`, `npm run build:api`, `npm run db:seed`.
+Root shortcuts: `npm run dev:api`, `npm run test:api`, `npm run build:api`, `npm run db:seed`, `npm run db:seed:posts`.
 Docs: `server/README.md` (setup, configuration, GoDaddy deployment),
 `docs/API.md` (every endpoint), `/api/docs` on a running server (Swagger UI),
 `postman/kedem-life-api.postman_collection.json`.
 
 ## Blog
 
-`/blog` is a public feed — readable signed in or not — of articles written by
-coaches, studio admins and platform staff (`content:write`). The newest post
-leads; older posts load a page at a time. Each article is a list of typed
-blocks (headings, paragraphs, images, video links, quotes, bullet lists) rather
-than HTML, so rendering is safe by construction and the reader gets a table of
-contents and a reading-progress bar for free. Staff write and manage posts at
-`/app/blog` (drafts, publish/unpublish, delete); a coach manages their own
-posts, an admin their studio's, an app manager everything. YouTube and Vimeo
-links embed inline; other video links open in a new tab.
+`/blog` is a public, social-style feed — readable signed in or not — of
+articles written by coaches, studio admins and platform staff
+(`content:write`). Newest first, one column, and older posts keep loading as
+you scroll. Every studio has its own blog at `/blog/studio/:slug` and every
+coach theirs at `/blog/author/:id`; the search box looks inside the article
+body, not just at titles. Each article is a list of typed blocks (headings,
+paragraphs, images, video links, quotes, bullet lists) rather than HTML, so
+rendering is safe by construction and the reader gets a table of contents and
+a reading-progress bar for free. Staff write and manage posts at `/app/blog`
+(drafts, publish/unpublish, delete); a coach manages their own posts, an admin
+their studio's, an app manager everything. YouTube and Vimeo links embed
+inline; other video links open in a new tab.
+
+Posts live in Firestore (`posts` and `postSlugs`) behind the API in `server/`;
+the in-memory adapter is only used with `VITE_API_MODE=mock`. `npm run
+db:seed` loads the demo posts with everything else; `npm run db:seed:posts`
+adds just the posts to a database that already has studios and people.
 
 ## Running it
 

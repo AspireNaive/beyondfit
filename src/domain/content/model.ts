@@ -95,10 +95,12 @@ export type PostInput = {
 }
 
 export type PostFilter = {
-  /** Only posts from this studio. */
+  /** Only posts from this studio — its own blog. */
   readonly tenantSlug?: string
+  /** Only posts by this coach or staff member — their own blog. */
+  readonly authorId?: string
   readonly tag?: string
-  /** Substring match on title, excerpt and tags. */
+  /** Substring match on title, excerpt, tags and the body text. */
   readonly query?: string
   /** 1-based. */
   readonly page?: number
@@ -146,6 +148,47 @@ export function wordCount(blocks: readonly PostBlock[]): number {
 }
 
 const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length
+
+/** Every human-readable string in the body, for search. */
+export function blockText(blocks: readonly PostBlock[]): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'heading':
+      case 'paragraph':
+        parts.push(block.text)
+        break
+      case 'quote':
+        parts.push(block.text, block.attribution ?? '')
+        break
+      case 'list':
+        parts.push(...block.items)
+        break
+      case 'image':
+        parts.push(block.alt, block.caption ?? '')
+        break
+      case 'video':
+        parts.push(block.caption ?? '')
+        break
+    }
+  }
+  return parts.join(' ')
+}
+
+/** Does a post match a free-text search? Title, summary, tags and body. */
+export function postMatches(
+  post: Pick<Post, 'title' | 'excerpt' | 'tags' | 'blocks'>,
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return (
+    post.title.toLowerCase().includes(q) ||
+    post.excerpt.toLowerCase().includes(q) ||
+    post.tags.some((t) => t.toLowerCase().includes(q)) ||
+    blockText(post.blocks).toLowerCase().includes(q)
+  )
+}
 
 /** 200 words a minute, never less than one minute; images count for a little. */
 export const readingMinutes = (blocks: readonly PostBlock[]) =>

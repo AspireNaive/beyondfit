@@ -14,6 +14,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:posts": "tsx scripts/seed-posts.ts",
     "db:bootstrap": "tsx scripts/bootstrap.ts",
     "test": "firebase emulators:exec --only firestore --project demo-kedem --config ../firebase.json \"vitest run\"",
     "test:watch": "vitest",

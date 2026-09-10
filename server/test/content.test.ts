@@ -44,6 +44,23 @@ describe('content (blog)', () => {
 
     const searched = await api().get('/api/posts?query=zone 2')
     expect(searched.body.items.map((p: { slug: string }) => p.slug)).toContain('why-zone-2-is-the-base-of-everything')
+
+    // Body text counts too: "mitochondria" appears only inside the Zone 2 article.
+    const inBody = await api().get('/api/posts?query=mitochondria')
+    expect(inBody.body.items.map((p: { slug: string }) => p.slug)).toEqual(['why-zone-2-is-the-base-of-everything'])
+    expect((await api().get('/api/posts?query=definitely-not-in-any-post')).body.total).toBe(0)
+  })
+
+  it("each coach has their own feed: ?author= returns only that author's published posts", async () => {
+    const mara = await api().get('/api/posts?author=u-coach-mara')
+    expect(mara.status).toBe(200)
+    expect(mara.body.total).toBeGreaterThan(0)
+    expect(mara.body.items.every((p: { authorId: string; status: string }) => p.authorId === 'u-coach-mara' && p.status === 'published')).toBe(true)
+    // Devon only has a draft, so his public feed is empty.
+    expect((await api().get('/api/posts?author=u-coach-devon')).body.total).toBe(0)
+    // Combining scopes narrows.
+    const combined = await api().get('/api/posts?author=u-coach-priya&tag=nutrition')
+    expect(combined.body.items.map((p: { slug: string }) => p.slug)).toEqual(['protein-how-much-and-when'])
   })
 
   it('a published post is public by slug; a draft is null unless the caller manages it', async () => {

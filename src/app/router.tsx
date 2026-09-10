@@ -104,6 +104,9 @@ export const router = createBrowserRouter([
       { path: 'shop', element: shell(<ShopPage />) },
       { path: 'shop/:slug', element: shell(<ProductPage />) },
       { path: 'blog', element: shell(<BlogPage />) },
+      // Each studio and each coach has their own blog.
+      { path: 'blog/studio/:tenantSlug', element: shell(<BlogPage />) },
+      { path: 'blog/author/:authorId', element: shell(<BlogPage />) },
       { path: 'blog/:slug', element: shell(<PostPage />) },
       { path: '*', element: shell(<NotFoundPage />) },
     ],
@@ -241,6 +244,8 @@ export const router = createBrowserRouter([
       // Blog: the feed and articles are readable by every signed-in role;
       // the management list and editor need content:write.
       { path: 'blog/feed', element: shell(<BlogPage />) },
+      { path: 'blog/feed/studio/:tenantSlug', element: shell(<BlogPage />) },
+      { path: 'blog/feed/author/:authorId', element: shell(<BlogPage />) },
       { path: 'blog/read/:slug', element: shell(<PostPage />) },
       {
         path: 'blog',

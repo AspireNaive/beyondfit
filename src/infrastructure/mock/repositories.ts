@@ -34,6 +34,7 @@ import {
 } from '@/domain/commerce/model'
 import {
   PostStatus,
+  postMatches,
   readingMinutes,
   type Post,
   type PostFilter,
@@ -552,19 +553,12 @@ class MockContent implements ContentPort {
   async listPosts(filter: PostFilter = {}): Promise<Page<Post>> {
     let result = posts.filter((p) => p.status === PostStatus.Published)
     if (filter.tenantSlug) result = result.filter((p) => p.tenantSlug === filter.tenantSlug)
+    if (filter.authorId) result = result.filter((p) => p.authorId === filter.authorId)
     if (filter.tag) {
       const tag = filter.tag.toLowerCase()
       result = result.filter((p) => p.tags.some((t) => t.toLowerCase() === tag))
     }
-    if (filter.query) {
-      const q = filter.query.toLowerCase()
-      result = result.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.excerpt.toLowerCase().includes(q) ||
-          p.tags.some((t) => t.toLowerCase().includes(q)),
-      )
-    }
+    if (filter.query) result = result.filter((p) => postMatches(p, filter.query!))
     result = [...result].sort(newestFirst)
 
     const pageSize = filter.pageSize ?? POSTS_DEFAULT_PAGE_SIZE

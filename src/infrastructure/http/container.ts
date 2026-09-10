@@ -178,6 +178,7 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL
         api.get<Page<Post>>(
           `/posts${qs({
             tenant: filter.tenantSlug,
+            author: filter.authorId,
             tag: filter.tag,
             query: filter.query,
             page: filter.page,

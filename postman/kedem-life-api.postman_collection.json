@@ -1204,6 +1204,12 @@
          "description": "studio slug"
         },
         {
+         "key": "author",
+         "value": "u-coach-mara",
+         "disabled": true,
+         "description": "user id — that coach's own blog"
+        },
+        {
          "key": "tag",
          "value": "training",
          "disabled": true,
@@ -1213,7 +1219,7 @@
          "key": "query",
          "value": "zone 2",
          "disabled": true,
-         "description": "substring of title, excerpt or tags"
+         "description": "substring of title, summary, tags or the article body"
         },
         {
          "key": "page",

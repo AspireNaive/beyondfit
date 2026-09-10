@@ -13,6 +13,7 @@ import { postDate } from './format'
 import { PostCard, PostCover } from './PostCard'
 import { PostContent } from './PostContent'
 import { usePost, usePostFeed } from './hooks'
+import { blogPaths } from './paths'
 
 /** Thin bar along the top edge that fills as the reader scrolls the article. */
 function ReadingProgress() {
@@ -111,8 +112,9 @@ export default function PostPage() {
   const { slug } = useParams()
   const location = useLocation()
   const inApp = location.pathname.startsWith('/app')
+  const paths = blogPaths(inApp)
   const basePath = inApp ? '/app/blog/read' : '/blog'
-  const feedPath = inApp ? '/app/blog/feed' : '/blog'
+  const feedPath = paths.feed
 
   const user = useCurrentUser()
   const canWrite = useCan(Permission.PublishContent)
@@ -207,7 +209,7 @@ export default function PostPage() {
             <header className="mt-6">
               <div className="flex flex-wrap items-center gap-2">
                 {post.tags.map((tag) => (
-                  <Link key={tag} to={feedPath}>
+                  <Link key={tag} to={paths.tag(tag)}>
                     <Badge tone="volt">{tag}</Badge>
                   </Link>
                 ))}
@@ -217,12 +219,18 @@ export default function PostPage() {
 
               <div className="mt-8 flex flex-wrap items-center gap-4 border-y border-ink-700 py-4">
                 <div className="flex items-center gap-3">
-                  <Avatar name={post.authorName} src={post.authorAvatarUrl} size="md" />
+                  <Link to={paths.author(post.authorId)} aria-label={`${post.authorName}'s blog`}>
+                    <Avatar name={post.authorName} src={post.authorAvatarUrl} size="md" />
+                  </Link>
                   <div>
-                    <p className="text-sm font-semibold text-chalk">{post.authorName}</p>
+                    <Link to={paths.author(post.authorId)} className="text-sm font-semibold text-chalk hover:text-volt-400">
+                      {post.authorName}
+                    </Link>
                     <p className="text-xs text-chalk-faint">
                       {post.authorTitle ? `${post.authorTitle} · ` : ''}
-                      {post.tenantName}
+                      <Link to={paths.studio(post.tenantSlug)} className="hover:text-volt-400">
+                        {post.tenantName}
+                      </Link>
                     </p>
                   </div>
                 </div>
@@ -283,9 +291,17 @@ export default function PostPage() {
           <div className="shell">
             <div className="mb-6 flex items-end justify-between gap-4">
               <h2 className="text-3xl">More from the blog</h2>
-              <Link to={feedPath} className="text-xs font-semibold uppercase tracking-wider text-volt-400">
-                All articles
-              </Link>
+              <div className="flex flex-wrap gap-4">
+                <Link to={paths.author(post.authorId)} className="text-xs font-semibold uppercase tracking-wider text-volt-400">
+                  More by {post.authorName.split(' ')[0]}
+                </Link>
+                <Link to={paths.studio(post.tenantSlug)} className="text-xs font-semibold uppercase tracking-wider text-volt-400">
+                  {post.tenantName}
+                </Link>
+                <Link to={feedPath} className="text-xs font-semibold uppercase tracking-wider text-volt-400">
+                  All articles
+                </Link>
+              </div>
             </div>
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {related.map((item) => (

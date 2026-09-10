@@ -85,6 +85,7 @@ Useful scripts:
 | `npm run build` / `npm start` | compile to `dist/` and run it |
 | `npm run emulators` | Firestore emulator with persisted data |
 | `npm run db:seed [-- --reset]` | demo data (`--reset` empties every collection first) |
+| `npm run db:seed:posts` | only the demo blog posts, into a database that already has studios and people; skips what exists |
 | `npm run db:bootstrap` | production: create the default tenant + an `app_manager` from `BOOTSTRAP_*` |
 | `npm test` | starts the emulator, seeds it, runs the integration suite, stops it |
 
