@@ -117,6 +117,11 @@ Both talk to the same Firestore database.
 >
 > **Vercel** serves `dist/` from its CDN and runs the same Express app as a
 > serverless function (`api/index.ts`, rewritten from `/api/*`).
+>
+> Neither host deploys Firestore indexes. After merging a change that adds
+> some (`firestore.indexes.json`), run
+> `npx firebase deploy --only firestore:indexes --project beyondfit-cc69a` once;
+> the API sorts in memory until they exist, so the site stays up meanwhile.
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

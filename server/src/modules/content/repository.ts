@@ -2,6 +2,7 @@ import type { Timestamp } from 'firebase-admin/firestore'
 import { col, db, docOf, runTransaction, Timestamp as Ts, toIso } from '../../db/firestore.js'
 import type { Page, Post, PostBlock, PostStatus, Role } from '../../domain.js'
 import { conflict } from '../../lib/errors.js'
+import { logger } from '../../lib/logger.js'
 
 /**
  * posts/{id}. The author and studio are denormalised onto the row so the
@@ -88,6 +89,46 @@ export function readingMinutes(blocks: readonly PostBlock[]): number {
 
 // ---- Reads -------------------------------------------------------------------
 
+/**
+ * Firestore refuses an ordered, filtered query until its composite index
+ * exists (FAILED_PRECONDITION, gRPC code 9). GoDaddy and Vercel deploy the
+ * code but not `firestore.indexes.json`, so rather than 500 the feed until
+ * someone runs `firebase deploy --only firestore:indexes`, fetch the filtered
+ * set unordered and sort here. Slower on a big blog, correct on every host.
+ */
+const isMissingIndex = (err: unknown) =>
+  typeof err === 'object' && err !== null && (err as { code?: number }).code === 9
+
+let warnedMissingIndex = false
+
+export async function rowsOrdered(
+  filtered: FirebaseFirestore.Query,
+  orderField: 'publishedAt' | 'updatedAt',
+  page?: { offset: number; limit: number },
+): Promise<{ rows: PostRow[]; total: number | null }> {
+  const ordered = filtered.orderBy(orderField, 'desc')
+  try {
+    if (page) {
+      const [total, snap] = await Promise.all([ordered.count().get(), ordered.offset(page.offset).limit(page.limit).get()])
+      return { rows: snap.docs.map((d) => docOf<PostDoc>(d)!), total: total.data().count }
+    }
+    const snap = await ordered.get()
+    return { rows: snap.docs.map((d) => docOf<PostDoc>(d)!), total: snap.size }
+  } catch (err) {
+    if (!isMissingIndex(err)) throw err
+    if (!warnedMissingIndex) {
+      warnedMissingIndex = true
+      logger.warn('posts: composite index missing — sorting in memory. Run `firebase deploy --only firestore:indexes`.')
+    }
+    const rows = (await filtered.get()).docs
+      .map((d) => docOf<PostDoc>(d)!)
+      .sort((a, b) => (b[orderField]?.toMillis() ?? 0) - (a[orderField]?.toMillis() ?? 0) || a.id.localeCompare(b.id))
+    return page
+      ? { rows: rows.slice(page.offset, page.offset + page.limit), total: rows.length }
+      : { rows, total: rows.length }
+  }
+}
+
 export type PublicFilter = {
   tenantSlug?: string | undefined
   authorId?: string | undefined
@@ -136,13 +177,12 @@ export async function listPublished(filter: PublicFilter): Promise<Page<Post>> {
   if (filter.tenantSlug) q = q.where('tenantSlug', '==', filter.tenantSlug.trim().toLowerCase())
   if (filter.authorId) q = q.where('authorId', '==', filter.authorId)
   if (filter.tag) q = q.where('tagsLower', 'array-contains', filter.tag.trim().toLowerCase())
-  q = q.orderBy('publishedAt', 'desc')
 
   const offset = (filter.page - 1) * filter.pageSize
 
   if (filter.query) {
     const needle = filter.query.trim().toLowerCase()
-    const rows = (await q.get()).docs.map((d) => docOf<PostDoc>(d)!).filter((r) => matchesQuery(r, needle))
+    const rows = (await rowsOrdered(q, 'publishedAt')).rows.filter((r) => matchesQuery(r, needle))
     return {
       items: rows.slice(offset, offset + filter.pageSize).map(toPost),
       total: rows.length,
@@ -151,13 +191,8 @@ export async function listPublished(filter: PublicFilter): Promise<Page<Post>> {
     }
   }
 
-  const [total, snap] = await Promise.all([q.count().get(), q.offset(offset).limit(filter.pageSize).get()])
-  return {
-    items: snap.docs.map((d) => toPost(docOf<PostDoc>(d)!)),
-    total: total.data().count,
-    page: filter.page,
-    pageSize: filter.pageSize,
-  }
+  const { rows, total } = await rowsOrdered(q, 'publishedAt', { offset, limit: filter.pageSize })
+  return { items: rows.map(toPost), total: total ?? rows.length, page: filter.page, pageSize: filter.pageSize }
 }
 
 export async function findPostRowBySlug(slug: string): Promise<PostRow | null> {
@@ -180,8 +215,7 @@ export async function listManaged(scope: { authorId?: string; tenantId?: string 
   let q: FirebaseFirestore.Query = posts()
   if (scope.authorId) q = q.where('authorId', '==', scope.authorId)
   else if (scope.tenantId) q = q.where('tenantId', '==', scope.tenantId)
-  q = q.orderBy('updatedAt', 'desc')
-  return (await q.get()).docs.map((d) => toPost(docOf<PostDoc>(d)!))
+  return (await rowsOrdered(q, 'updatedAt')).rows.map(toPost)
 }
 
 // ---- Writes ------------------------------------------------------------------

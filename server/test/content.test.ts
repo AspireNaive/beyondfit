@@ -159,3 +159,35 @@ describe('content (blog)', () => {
     expect((await api().patch('/api/posts/nope').set(manager).send({ title: 'Ghost post' })).status).toBe(404)
   })
 })
+
+describe('content (blog) without composite indexes', () => {
+  it('falls back to sorting in memory when Firestore reports a missing index', async () => {
+    const { rowsOrdered } = await import('../src/modules/content/repository.js')
+    const { col, db } = await import('../src/db/firestore.js')
+    const real = db.collection(col.posts).where('status', '==', 'published')
+    // Ordered reads fail the way the real service does before `firebase deploy --only firestore:indexes`.
+    const missingIndex = Object.assign(new Error('9 FAILED_PRECONDITION: The query requires an index.'), { code: 9 })
+    const broken = {
+      orderBy: () => ({
+        get: async () => { throw missingIndex },
+        count: () => ({ get: async () => { throw missingIndex } }),
+        offset: () => ({ limit: () => ({ get: async () => { throw missingIndex } }) }),
+      }),
+      get: () => real.get(),
+    } as unknown as FirebaseFirestore.Query
+
+    const all = await rowsOrdered(broken, 'publishedAt')
+    expect(all.total).toBeGreaterThanOrEqual(5)
+    const dates = all.rows.map((r) => r.publishedAt!.toMillis())
+    expect([...dates].sort((a, b) => b - a)).toEqual(dates)
+
+    const page2 = await rowsOrdered(broken, 'publishedAt', { offset: 2, limit: 2 })
+    expect(page2.rows).toHaveLength(2)
+    expect(page2.total).toBe(all.total)
+    expect(page2.rows[0]!.id).toBe(all.rows[2]!.id)
+
+    // Anything other than a missing index still surfaces.
+    const other = { orderBy: () => ({ get: async () => { throw Object.assign(new Error('boom'), { code: 13 }) } }) } as unknown as FirebaseFirestore.Query
+    await expect(rowsOrdered(other, 'updatedAt')).rejects.toThrow('boom')
+  })
+})
