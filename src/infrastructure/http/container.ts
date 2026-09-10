@@ -16,8 +16,9 @@ import type {
   ProductCategory,
   Subscription,
 } from '@/domain/commerce/model'
+import type { Post, PostFilter, PostInput, PostStatus } from '@/domain/content/model'
 import type { ContactMessage, Container } from '@/domain/ports'
-import type { IsoDate, OrderId, UserId } from '@/domain/shared/types'
+import type { IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
 import { ApiClient, qs } from './api-client'
 
 /**
@@ -169,6 +170,31 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL
       sendContactMessage: (message: ContactMessage) => api.post<void>('/contact', message),
       // POST /api/newsletter
       subscribeNewsletter: (email: string) => api.post<void>('/newsletter', { email }),
+    },
+
+    content: {
+      // GET /api/posts — public, published only, newest first, paged
+      listPosts: (filter: PostFilter = {}) =>
+        api.get<Page<Post>>(
+          `/posts${qs({
+            tenant: filter.tenantSlug,
+            tag: filter.tag,
+            query: filter.query,
+            page: filter.page,
+            pageSize: filter.pageSize,
+          })}`,
+        ),
+      // GET /api/posts/:slug — drafts included when the bearer may manage them
+      getPost: (slug: string) => api.get<Post | null>(`/posts/${encodeURIComponent(slug)}`),
+      // GET /api/posts/mine — scope derived from the bearer token
+      listManagedPosts: (_viewer: UserProfile) => api.get<readonly Post[]>('/posts/mine'),
+      // POST /api/posts
+      createPost: (input: PostInput, _author: UserProfile) => api.post<Post>('/posts', input),
+      // PATCH /api/posts/:postId
+      updatePost: (postId: PostId, patch: Partial<PostInput>) => api.patch<Post>(`/posts/${postId}`, patch),
+      setPostStatus: (postId: PostId, status: PostStatus) => api.patch<Post>(`/posts/${postId}`, { status }),
+      // DELETE /api/posts/:postId
+      deletePost: (postId: PostId) => api.delete<void>(`/posts/${postId}`),
     },
   }
 }

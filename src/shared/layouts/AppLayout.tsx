@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Newspaper,
   Package,
   Search,
   ShoppingBag,
@@ -68,6 +69,9 @@ const NAV: NavEntry[] = [
     icon: Building2,
     permission: Permission.ManagePlatform,
   },
+  // Staff land on the management list; members go straight to the feed.
+  { to: '/app/blog', label: 'Blog', icon: Newspaper, permission: Permission.PublishContent },
+  { to: '/app/blog/feed', label: 'Blog', icon: Newspaper, roles: [Role.Member] },
   { to: '/shop', label: 'Shop', icon: ShoppingBag },
 ]
 

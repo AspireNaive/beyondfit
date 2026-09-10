@@ -27,7 +27,8 @@ import type {
   ProductCategory,
   Subscription,
 } from '@/domain/commerce/model'
-import type { IsoDate, OrderId, UserId } from '@/domain/shared/types'
+import type { Post, PostFilter, PostInput, PostStatus } from '@/domain/content/model'
+import type { IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
 
 /**
  * Ports. The UI depends only on these interfaces; `infrastructure/` supplies
@@ -114,6 +115,24 @@ export interface MarketingPort {
   subscribeNewsletter(email: string): Promise<void>
 }
 
+/**
+ * Articles and blog posts. Reads are public — the feed is visible whether or
+ * not anyone is signed in — and writes are for coaches and studio staff.
+ */
+export interface ContentPort {
+  /** Published posts, newest first, paged so older posts stay reachable. */
+  listPosts(filter?: PostFilter): Promise<Page<Post>>
+  /** A published post by slug; authors and staff also get their drafts. */
+  getPost(slug: string): Promise<Post | null>
+  /** Drafts and published posts the viewer may manage: own for coaches,
+   *  the studio's for admins, everything for app managers. */
+  listManagedPosts(viewer: UserProfile): Promise<readonly Post[]>
+  createPost(input: PostInput, author: UserProfile): Promise<Post>
+  updatePost(id: PostId, patch: Partial<PostInput>): Promise<Post>
+  setPostStatus(id: PostId, status: PostStatus): Promise<Post>
+  deletePost(id: PostId): Promise<void>
+}
+
 export type Container = {
   auth: AuthPort
   directory: DirectoryPort
@@ -124,4 +143,5 @@ export type Container = {
   payments: PaymentsPort
   tenants: TenantPort
   marketing: MarketingPort
+  content: ContentPort
 }

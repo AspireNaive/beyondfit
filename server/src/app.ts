@@ -13,6 +13,7 @@ import { errorHandler } from './lib/errors.js'
 import { logger } from './lib/logger.js'
 import { appointmentsRouter } from './modules/appointments/routes.js'
 import { productsRouter } from './modules/catalog/routes.js'
+import { postsRouter } from './modules/content/routes.js'
 import { directoryRouter } from './modules/directory/routes.js'
 import { contactRouter, newsletterRouter } from './modules/marketing/routes.js'
 import { ordersRouter, paymentsRouter, subscriptionsRouter } from './modules/orders/routes.js'
@@ -30,8 +31,10 @@ const CSP_DIRECTIVES = {
   scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
   styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
   fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-  imgSrc: ["'self'", 'data:'],
-  mediaSrc: ["'self'"],
+  // Blog authors link images and videos from wherever they host them.
+  imgSrc: ["'self'", 'data:', 'https:'],
+  mediaSrc: ["'self'", 'https:'],
+  frameSrc: ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
   connectSrc: ["'self'"],
   frameAncestors: ["'none'"],
   baseUri: ["'self'"],
@@ -88,6 +91,7 @@ export function createApp(): Express {
   api.use('/appointments', appointmentsRouter)
   api.use('/members', membersRouter)
   api.use('/products', productsRouter)
+  api.use('/posts', postsRouter)
   api.use('/orders', ordersRouter)
   api.use('/payments', paymentsRouter)
   api.use('/subscriptions', subscriptionsRouter)

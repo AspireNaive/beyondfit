@@ -9,7 +9,13 @@
     { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "instructorIds", "arrayConfig": "CONTAINS" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "customerId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] },
-    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] }
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "tenantSlug", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tagsLower", "arrayConfig": "CONTAINS" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tagsLower", "arrayConfig": "CONTAINS" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "tenantSlug", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "authorId", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "updatedAt", "order": "DESCENDING" } ] }
   ],
   "fieldOverrides": []
 }

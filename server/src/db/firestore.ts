@@ -60,6 +60,9 @@ export const col = {
   passwordResetTokens: 'passwordResetTokens',
   contactMessages: 'contactMessages',
   newsletterSubscribers: 'newsletterSubscribers',
+  posts: 'posts',
+  /** slug → { postId }; one public link per article. */
+  postSlugs: 'postSlugs',
 } as const
 
 export const ALL_COLLECTIONS = Object.values(col)

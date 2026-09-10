@@ -46,6 +46,10 @@
       "description": "Public storefront reads; admin-only writes."
     },
     {
+      "name": "Content",
+      "description": "Blog articles by coaches and studio staff. Public reads; writes need content:write."
+    },
+    {
       "name": "Orders",
       "description": "Checkout and order lifecycle."
     },
@@ -2195,6 +2199,496 @@
           },
           "422": {
             "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/posts": {
+      "get": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "listPosts",
+        "summary": "Public blog feed",
+        "description": "Public. Published posts only, newest publishedAt first, paged.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Only posts from this studio (slug)."
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "description": "Case-insensitive tag."
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Substring match on title, excerpt or tags."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 9
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the feed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "post-zone-2",
+                      "tenantId": "t-ironworks",
+                      "tenantName": "Ironworks Performance",
+                      "tenantSlug": "ironworks",
+                      "slug": "why-zone-2-is-the-base-of-everything",
+                      "title": "Why Zone 2 is the base of everything",
+                      "excerpt": "Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.",
+                      "coverImageUrl": null,
+                      "tags": [
+                        "Training",
+                        "Conditioning"
+                      ],
+                      "blocks": [
+                        {
+                          "type": "paragraph",
+                          "text": "Every intake screen we run tells the same story…"
+                        },
+                        {
+                          "type": "heading",
+                          "text": "What Zone 2 actually is"
+                        },
+                        {
+                          "type": "list",
+                          "items": [
+                            "Heart rate roughly 60–70% of your maximum",
+                            "Nasal breathing is possible but not comfortable"
+                          ]
+                        }
+                      ],
+                      "authorId": "u-coach-mara",
+                      "authorName": "Mara Whitfield",
+                      "authorRole": "coach",
+                      "authorTitle": "Head Strength Coach",
+                      "authorAvatarUrl": null,
+                      "status": "published",
+                      "publishedAt": "2026-09-08T09:30:00.000Z",
+                      "createdAt": "2026-09-07T16:15:00.000Z",
+                      "updatedAt": "2026-09-08T09:30:00.000Z",
+                      "readingMinutes": 3
+                    }
+                  ],
+                  "total": 5,
+                  "page": 1,
+                  "pageSize": 9
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "createPost",
+        "summary": "Write a post",
+        "description": "Requires a valid bearer token. Needs content:write (coach, admin, app_manager). The author and studio come from the token; the slug must be unused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created post.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                },
+                "example": {
+                  "id": "post-zone-2",
+                  "tenantId": "t-ironworks",
+                  "tenantName": "Ironworks Performance",
+                  "tenantSlug": "ironworks",
+                  "slug": "why-zone-2-is-the-base-of-everything",
+                  "title": "Why Zone 2 is the base of everything",
+                  "excerpt": "Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.",
+                  "coverImageUrl": null,
+                  "tags": [
+                    "Training",
+                    "Conditioning"
+                  ],
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "text": "Every intake screen we run tells the same story…"
+                    },
+                    {
+                      "type": "heading",
+                      "text": "What Zone 2 actually is"
+                    },
+                    {
+                      "type": "list",
+                      "items": [
+                        "Heart rate roughly 60–70% of your maximum",
+                        "Nasal breathing is possible but not comfortable"
+                      ]
+                    }
+                  ],
+                  "authorId": "u-coach-mara",
+                  "authorName": "Mara Whitfield",
+                  "authorRole": "coach",
+                  "authorTitle": "Head Strength Coach",
+                  "authorAvatarUrl": null,
+                  "status": "published",
+                  "publishedAt": "2026-09-08T09:30:00.000Z",
+                  "createdAt": "2026-09-07T16:15:00.000Z",
+                  "updatedAt": "2026-09-08T09:30:00.000Z",
+                  "readingMinutes": 3
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "A post with that link already exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "A post with that link already exists.",
+                  "code": "slug_taken"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/posts/mine": {
+      "get": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "listMyPosts",
+        "summary": "Posts I manage",
+        "description": "Requires a valid bearer token and content:write. Drafts included, most recently edited first. Coach: own posts; admin: the studio's; app_manager: all.",
+        "responses": {
+          "200": {
+            "description": "Posts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Post"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/posts/{slug}": {
+      "get": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "getPostBySlug",
+        "summary": "One post by slug",
+        "description": "Public. Returns JSON null (200) for an unknown slug, and for a draft unless the bearer may manage it.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The post, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Post"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "example": {
+                  "id": "post-zone-2",
+                  "tenantId": "t-ironworks",
+                  "tenantName": "Ironworks Performance",
+                  "tenantSlug": "ironworks",
+                  "slug": "why-zone-2-is-the-base-of-everything",
+                  "title": "Why Zone 2 is the base of everything",
+                  "excerpt": "Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.",
+                  "coverImageUrl": null,
+                  "tags": [
+                    "Training",
+                    "Conditioning"
+                  ],
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "text": "Every intake screen we run tells the same story…"
+                    },
+                    {
+                      "type": "heading",
+                      "text": "What Zone 2 actually is"
+                    },
+                    {
+                      "type": "list",
+                      "items": [
+                        "Heart rate roughly 60–70% of your maximum",
+                        "Nasal breathing is possible but not comfortable"
+                      ]
+                    }
+                  ],
+                  "authorId": "u-coach-mara",
+                  "authorName": "Mara Whitfield",
+                  "authorRole": "coach",
+                  "authorTitle": "Head Strength Coach",
+                  "authorAvatarUrl": null,
+                  "status": "published",
+                  "publishedAt": "2026-09-08T09:30:00.000Z",
+                  "createdAt": "2026-09-07T16:15:00.000Z",
+                  "updatedAt": "2026-09-08T09:30:00.000Z",
+                  "readingMinutes": 3
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/posts/{postId}": {
+      "parameters": [
+        {
+          "name": "postId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "updatePost",
+        "summary": "Update, publish or unpublish a post",
+        "description": "Requires a valid bearer token and content:write, and the post must be in the caller's scope (own / studio / all). Publishing stamps publishedAt the first time only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated post.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                },
+                "example": {
+                  "id": "post-zone-2",
+                  "tenantId": "t-ironworks",
+                  "tenantName": "Ironworks Performance",
+                  "tenantSlug": "ironworks",
+                  "slug": "why-zone-2-is-the-base-of-everything",
+                  "title": "Why Zone 2 is the base of everything",
+                  "excerpt": "Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.",
+                  "coverImageUrl": null,
+                  "tags": [
+                    "Training",
+                    "Conditioning"
+                  ],
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "text": "Every intake screen we run tells the same story…"
+                    },
+                    {
+                      "type": "heading",
+                      "text": "What Zone 2 actually is"
+                    },
+                    {
+                      "type": "list",
+                      "items": [
+                        "Heart rate roughly 60–70% of your maximum",
+                        "Nasal breathing is possible but not comfortable"
+                      ]
+                    }
+                  ],
+                  "authorId": "u-coach-mara",
+                  "authorName": "Mara Whitfield",
+                  "authorRole": "coach",
+                  "authorTitle": "Head Strength Coach",
+                  "authorAvatarUrl": null,
+                  "status": "published",
+                  "publishedAt": "2026-09-08T09:30:00.000Z",
+                  "createdAt": "2026-09-07T16:15:00.000Z",
+                  "updatedAt": "2026-09-08T09:30:00.000Z",
+                  "readingMinutes": 3
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Post not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Post not found."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A post with that link already exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "A post with that link already exists.",
+                  "code": "slug_taken"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Content"
+        ],
+        "operationId": "deletePost",
+        "summary": "Delete a post",
+        "description": "Requires a valid bearer token and content:write, within the caller's scope. Frees the slug.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Post not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "Post not found."
+                }
+              }
+            }
           }
         }
       }
@@ -5423,6 +5917,441 @@
             "source": "footer"
           }
         ]
+      },
+      "PostStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published"
+        ]
+      },
+      "PostBlock": {
+        "description": "One block of an article body. Text is plain — never HTML.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "const": "heading"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 160
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "const": "paragraph"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 5000
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "url"
+            ],
+            "properties": {
+              "type": {
+                "const": "image"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "alt": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "caption": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "url"
+            ],
+            "properties": {
+              "type": {
+                "const": "video"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "YouTube and Vimeo links are embedded by the front end; anything else renders as a link."
+              },
+              "caption": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "const": "quote"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 600
+              },
+              "attribution": {
+                "type": "string",
+                "maxLength": 120
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "items"
+            ],
+            "properties": {
+              "type": {
+                "const": "list"
+              },
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 30,
+                "items": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "Post": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "tenantName": {
+            "type": "string"
+          },
+          "tenantSlug": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "coverImageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostBlock"
+            }
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "authorRole": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "authorTitle": {
+            "type": "string"
+          },
+          "authorAvatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/PostStatus"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set on first publish and kept when unpublished."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readingMinutes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "tenantName",
+          "tenantSlug",
+          "slug",
+          "title",
+          "excerpt",
+          "tags",
+          "blocks",
+          "authorId",
+          "authorName",
+          "authorRole",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "readingMinutes"
+        ],
+        "example": {
+          "id": "post-zone-2",
+          "tenantId": "t-ironworks",
+          "tenantName": "Ironworks Performance",
+          "tenantSlug": "ironworks",
+          "slug": "why-zone-2-is-the-base-of-everything",
+          "title": "Why Zone 2 is the base of everything",
+          "excerpt": "Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.",
+          "coverImageUrl": null,
+          "tags": [
+            "Training",
+            "Conditioning"
+          ],
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Every intake screen we run tells the same story…"
+            },
+            {
+              "type": "heading",
+              "text": "What Zone 2 actually is"
+            },
+            {
+              "type": "list",
+              "items": [
+                "Heart rate roughly 60–70% of your maximum",
+                "Nasal breathing is possible but not comfortable"
+              ]
+            }
+          ],
+          "authorId": "u-coach-mara",
+          "authorName": "Mara Whitfield",
+          "authorRole": "coach",
+          "authorTitle": "Head Strength Coach",
+          "authorAvatarUrl": null,
+          "status": "published",
+          "publishedAt": "2026-09-08T09:30:00.000Z",
+          "createdAt": "2026-09-07T16:15:00.000Z",
+          "updatedAt": "2026-09-08T09:30:00.000Z",
+          "readingMinutes": 3
+        }
+      },
+      "PostPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Post"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "PostInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "slug",
+          "excerpt",
+          "blocks"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$"
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 300
+          },
+          "coverImageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "default": []
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/PostBlock"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/PostStatus",
+            "default": "draft"
+          }
+        },
+        "example": {
+          "title": "Tempo runs for lifters",
+          "slug": "tempo-runs-for-lifters",
+          "excerpt": "Why a weekly tempo run makes your squat day feel easier.",
+          "tags": [
+            "Training"
+          ],
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Most lifters avoid running. Here is the one run worth keeping."
+            },
+            {
+              "type": "heading",
+              "text": "The session"
+            },
+            {
+              "type": "list",
+              "items": [
+                "10 min easy",
+                "20 min comfortably hard",
+                "5 min walk"
+              ]
+            }
+          ],
+          "status": "draft"
+        }
+      },
+      "PostPatch": {
+        "description": "Any subset of PostInput. `status: \"published\"` publishes; `\"draft\"` unpublishes.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$"
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 300
+          },
+          "coverImageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "default": []
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/PostBlock"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/PostStatus",
+            "default": "draft"
+          }
+        },
+        "example": {
+          "status": "published"
+        }
       }
     },
     "responses": {
