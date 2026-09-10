@@ -1,1607 +1,1822 @@
 {
-  "info": {
-    "name": "Kedem Life API",
-    "description": "Every route of the Kedem Life REST API (server/openapi.json is the reference). Set {{baseUrl}} to the API root (default http://localhost:4000/api), run Auth > Login, then call anything: protected requests send Bearer {{token}} from the collection auth. Demo password for every seed account: kedemlife.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "auth": {
-    "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{token}}",
-        "type": "string"
-      }
-    ]
-  },
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:4000/api",
-      "type": "string"
-    },
-    {
-      "key": "token",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "refreshToken",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "memberId",
-      "value": "u-member-1",
-      "type": "string"
-    },
-    {
-      "key": "tenantId",
-      "value": "t-ironworks",
-      "type": "string"
-    },
-    {
-      "key": "userId",
-      "value": "u-coach-mara",
-      "type": "string"
-    },
-    {
-      "key": "providerId",
-      "value": "u-coach-mara",
-      "type": "string"
-    },
-    {
-      "key": "appointmentId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "productId",
-      "value": "p-1",
-      "type": "string"
-    },
-    {
-      "key": "slug",
-      "value": "foundation-12-week",
-      "type": "string"
-    },
-    {
-      "key": "orderId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "subscriptionId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "date",
-      "value": "2026-09-15",
-      "type": "string"
-    }
-  ],
-  "item": [
-    {
-      "name": "System",
-      "description": "Public health, OpenAPI document and Swagger UI.",
-      "item": [
-        {
-          "name": "Health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "OpenAPI document",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/openapi.json",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "openapi.json"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Swagger UI (HTML)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/docs",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "docs"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Auth",
-      "description": "Run \"Login\" first: its test script stores accessToken in the collection variable {{token}}, which every protected request sends as Bearer.",
-      "item": [
-        {
-          "name": "Login",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"member@kedemlife.app\",\n  \"password\": \"kedemlife\",\n  \"portal\": \"member\",\n  \"rememberMe\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Demo accounts (password kedemlife): member@ (portal member), coach@ (portal coach), admin@ and manager@ (portal admin). Rate limit 30 / 15 min / IP."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('login ok', () => pm.response.to.have.status(200));",
-                  "const json = pm.response.json();",
-                  "pm.collectionVariables.set('token', json.accessToken);",
-                  "pm.collectionVariables.set('refreshToken', json.refreshToken);",
-                  "pm.collectionVariables.set('memberId', json.user.id);",
-                  "pm.collectionVariables.set('tenantId', json.tenant.id);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Register",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "register"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Jordan\",\n  \"lastName\": \"Lee\",\n  \"email\": \"jordan.lee+{{$timestamp}}@example.com\",\n  \"password\": \"longenough2\",\n  \"phone\": \"+1 555 010 0100\",\n  \"goal\": \"Run a 10k\",\n  \"tenantSlug\": \"ironworks\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Creates a member in the named studio (default studio when tenantSlug is omitted) and signs them in. 409 email_taken / seats_full, 422 weak password."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('session issued', () => pm.response.to.have.status(pm.response.code === 201 ? 201 : 200));",
-                  "const json = pm.response.json();",
-                  "if (json && json.accessToken) {",
-                  "  pm.collectionVariables.set('token', json.accessToken);",
-                  "  pm.collectionVariables.set('refreshToken', json.refreshToken);",
-                  "  if (json.user) pm.collectionVariables.set('memberId', json.user.id);",
-                  "  if (json.tenant) pm.collectionVariables.set('tenantId', json.tenant.id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Me",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/auth/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "me"
-              ]
-            },
-            "description": "Fresh user + tenant for the token; no tokens re-issued."
-          },
-          "response": []
-        },
-        {
-          "name": "Update profile",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "me"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Jordan\",\n  \"bio\": \"Weekend trail runner.\",\n  \"location\": \"Beacon, NY\",\n  \"phone\": null\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "All fields optional; null clears phone, avatarUrl, title, bio, location. Returns UserProfile."
-          },
-          "response": []
-        },
-        {
-          "name": "Refresh token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "refresh"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Rotates the refresh token: the presented one is revoked (401 if reused)."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('session issued', () => pm.response.to.have.status(pm.response.code === 201 ? 201 : 200));",
-                  "const json = pm.response.json();",
-                  "if (json && json.accessToken) {",
-                  "  pm.collectionVariables.set('token', json.accessToken);",
-                  "  pm.collectionVariables.set('refreshToken', json.refreshToken);",
-                  "  if (json.user) pm.collectionVariables.set('memberId', json.user.id);",
-                  "  if (json.tenant) pm.collectionVariables.set('tenantId', json.tenant.id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "logout"
-              ]
-            },
-            "description": "Revokes the session refresh tokens. 204."
-          },
-          "response": []
-        },
-        {
-          "name": "Request password reset",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/password-reset",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "password-reset"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"member@kedemlife.app\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Always 204, even for unknown addresses."
-          },
-          "response": []
-        },
-        {
-          "name": "Confirm password reset",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/password-reset/confirm",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "password-reset",
-                "confirm"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"token\": \"paste-token-from-email-link\",\n  \"password\": \"newlongpassword\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "204 on success; 400 reset_invalid when the token is unknown, used or older than 30 min. Revokes every session."
-          },
-          "response": []
-        },
-        {
-          "name": "Change password",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/change-password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "change-password"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"kedemlife\",\n  \"newPassword\": \"longenough2\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "204 on success; 400 invalid_credentials when currentPassword is wrong."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Directory",
-      "description": "Who you can see: member -> coaches; coach -> assigned members + coaches; admin -> whole studio; app_manager -> everyone.",
-      "item": [
-        {
-          "name": "Mapped (people I may see)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/directory/mapped",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "directory",
-                "mapped"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "List by role",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/directory?role=coach",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "directory"
-              ],
-              "query": [
-                {
-                  "key": "role",
-                  "value": "coach",
-                  "description": "member | coach | admin | app_manager (members cannot list members)"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Profile",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/directory/:userId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "directory",
-                ":userId"
-              ],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": "{{userId}}"
-                }
-              ]
-            },
-            "description": "Returns 200 with JSON null when unknown or not visible."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Providers",
-      "description": "Public specialist finder. Seed providers: u-coach-mara, u-coach-devon, u-coach-priya, u-coach-tomas, u-coach-anke, u-coach-jae (timezone America/New_York, 60-minute slots).",
-      "item": [
-        {
-          "name": "List providers",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/providers?discipline=coaching&query=strength",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "providers"
-              ],
-              "query": [
-                {
-                  "key": "discipline",
-                  "value": "coaching",
-                  "disabled": true,
-                  "description": "coaching | nutrition | physiotherapy | medical | mental_performance"
-                },
-                {
-                  "key": "query",
-                  "value": "strength",
-                  "disabled": true,
-                  "description": "substring of name, title or credential"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Provider",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/providers/:providerId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "providers",
-                ":providerId"
-              ],
-              "variable": [
-                {
-                  "key": "providerId",
-                  "value": "{{providerId}}"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "200 with JSON null when unknown."
-          },
-          "response": []
-        },
-        {
-          "name": "Availability for a day",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/providers/:providerId/availability?date={{date}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "providers",
-                ":providerId",
-                "availability"
-              ],
-              "query": [
-                {
-                  "key": "date",
-                  "value": "{{date}}",
-                  "description": "YYYY-MM-DD in the provider timezone"
-                }
-              ],
-              "variable": [
-                {
-                  "key": "providerId",
-                  "value": "{{providerId}}"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Appointments",
-      "description": "Book at a published slot (see Providers > Availability). Durations 30/45/60; channel must be one the provider offers.",
-      "item": [
-        {
-          "name": "List appointments",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/appointments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "appointments"
-              ]
-            },
-            "description": "member -> own; coach -> as provider; admin -> studio; app_manager -> all."
-          },
-          "response": []
-        },
-        {
-          "name": "Book appointment",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/appointments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "appointments"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"providerId\": \"{{providerId}}\",\n  \"startsAt\": \"{{date}}T14:00:00.000Z\",\n  \"durationMinutes\": 60,\n  \"channel\": \"zoom\",\n  \"goal\": \"Build a base for a spring 10k\",\n  \"notes\": \"Prefer mornings.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201 Appointment (status confirmed). 400 provider not bookable, 403 other studio, 409 past/taken slot, 422 channel/duration/outside hours."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('appointmentId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cancel appointment",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/appointments/:appointmentId/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "appointments",
-                ":appointmentId",
-                "cancel"
-              ],
-              "variable": [
-                {
-                  "key": "appointmentId",
-                  "value": "{{appointmentId}}"
-                }
-              ]
-            },
-            "description": "Member, provider, studio admin or app_manager. 409 if already completed / no_show."
-          },
-          "response": []
-        },
-        {
-          "name": "Update status",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/appointments/:appointmentId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "appointments",
-                ":appointmentId"
-              ],
-              "variable": [
-                {
-                  "key": "appointmentId",
-                  "value": "{{appointmentId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"completed\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "confirmed | completed | no_show. Provider, studio admin or app_manager (not the member). 409 if cancelled."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Progress",
-      "description": "memberId is set by Login (own id). Access: the member, app_manager, studio admin, assigned coach, or a coach with a non-cancelled session with the member.",
-      "item": [
-        {
-          "name": "Body metrics",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/body-metrics",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "body-metrics"
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Log body metric",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/body-metrics",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "body-metrics"
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"recordedOn\": \"{{date}}\",\n  \"weightKg\": 78.4,\n  \"heightCm\": 178,\n  \"bodyFatPercent\": 18.2,\n  \"restingHeartRate\": 56,\n  \"waistCm\": 84,\n  \"note\": \"Morning, fasted\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201; same recordedOn overwrites."
-          },
-          "response": []
-        },
-        {
-          "name": "Activity (last N days)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/activity?days=30",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "activity"
-              ],
-              "query": [
-                {
-                  "key": "days",
-                  "value": "30",
-                  "description": "1..366, default 30"
-                }
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Upsert activity for a day",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/activity/:date",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "activity",
-                ":date"
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                },
-                {
-                  "key": "date",
-                  "value": "{{date}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"steps\": 9400,\n  \"activeMinutes\": 52,\n  \"caloriesBurned\": 620,\n  \"caloriesConsumed\": 2150,\n  \"proteinGrams\": 148,\n  \"waterMl\": 2600,\n  \"sleepHours\": 7.5,\n  \"workouts\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Replaces the whole day; omitted fields become 0."
-          },
-          "response": []
-        },
-        {
-          "name": "Goal",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/goal",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "goal"
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                }
-              ]
-            },
-            "description": "Default goal when none saved."
-          },
-          "response": []
-        },
-        {
-          "name": "Upsert goal",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/members/:memberId/goal",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "members",
-                ":memberId",
-                "goal"
-              ],
-              "variable": [
-                {
-                  "key": "memberId",
-                  "value": "{{memberId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"targetWeightKg\": 74,\n  \"dailyCalorieTarget\": 2200,\n  \"dailyProteinTarget\": 150,\n  \"dailyStepTarget\": 10000,\n  \"weeklyWorkoutTarget\": 4,\n  \"focus\": \"Strength and a spring 10k\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Catalog",
-      "description": "Public reads; writes need catalog:write (admin, app_manager). Seed products p-1..p-12; p-9 is the membership (slug membership-performance).",
-      "item": [
-        {
-          "name": "List products",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/products?category=program&query=foundation",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "products"
-              ],
-              "query": [
-                {
-                  "key": "category",
-                  "value": "program",
-                  "disabled": true,
-                  "description": "program | supplement | equipment | apparel | testing | membership"
-                },
-                {
-                  "key": "query",
-                  "value": "foundation",
-                  "disabled": true,
-                  "description": "substring of name or tagline"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Product by slug",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/products/:slug",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "products",
-                ":slug"
-              ],
-              "variable": [
-                {
-                  "key": "slug",
-                  "value": "{{slug}}"
-                }
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "200 with JSON null when unknown or inactive."
-          },
-          "response": []
-        },
-        {
-          "name": "Create product (admin)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "products"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"slug\": \"mobility-reset-4-week\",\n  \"name\": \"Mobility Reset: 4 Weeks\",\n  \"tagline\": \"Move better in a month\",\n  \"description\": \"Four weeks of daily 15-minute mobility sessions.\",\n  \"category\": \"program\",\n  \"priceMinor\": 4900,\n  \"currency\": \"USD\",\n  \"compareAtMinor\": 6900,\n  \"accent\": \"#b6ef21\",\n  \"inStock\": true,\n  \"digital\": true,\n  \"instructorId\": \"u-coach-mara\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201 Product; 409 slug taken; 403 without catalog:write."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('productId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Update product (admin)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/products/:productId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "products",
-                ":productId"
-              ],
-              "variable": [
-                {
-                  "key": "productId",
-                  "value": "{{productId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"priceMinor\": 17900,\n  \"badge\": \"Autumn offer\",\n  \"inStock\": true,\n  \"active\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Any subset of the create fields plus active. 404 unknown id."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Orders",
-      "description": "Checkout is one transaction: order + manual charge + payment row; membership lines also start a subscription.",
-      "item": [
-        {
-          "name": "List orders",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "orders"
-              ]
-            },
-            "description": "member -> own; coach -> orders with their products; admin -> studio; app_manager -> all."
-          },
-          "response": []
-        },
-        {
-          "name": "Place order",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "orders"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"lines\": [\n    {\n      \"productId\": \"p-1\",\n      \"quantity\": 1\n    },\n    {\n      \"productId\": \"p-4\",\n      \"quantity\": 2\n    }\n  ],\n  \"method\": \"card\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201 Order (status paid). 409 out_of_stock / payment_failed; 422 unknown product or mixed currencies."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('orderId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Order",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/orders/:orderId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "orders",
-                ":orderId"
-              ],
-              "variable": [
-                {
-                  "key": "orderId",
-                  "value": "{{orderId}}"
-                }
-              ]
-            },
-            "description": "200 with JSON null when unknown or not visible."
-          },
-          "response": []
-        },
-        {
-          "name": "Update order status (staff)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/orders/:orderId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "orders",
-                ":orderId"
-              ],
-              "variable": [
-                {
-                  "key": "orderId",
-                  "value": "{{orderId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"shipped\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "awaiting_payment | paid | processing | shipped | delivered | refunded | cancelled. Coach/admin/app_manager only; members get 403."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Payments",
-      "description": "Needs payments:read (admin, app_manager). Log in as admin@kedemlife.app with portal \"admin\" first.",
-      "item": [
-        {
-          "name": "List payments",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/payments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "payments"
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Subscriptions",
-      "description": "Memberships. Members/coaches see their own; admins the studio; app_manager all.",
-      "item": [
-        {
-          "name": "List subscriptions",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/subscriptions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "subscriptions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Subscribe to a membership",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/subscriptions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "subscriptions"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"productId\": \"p-9\",\n  \"method\": \"card\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201 Subscription; 409 already_subscribed; 422 not a membership product."
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('subscriptionId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cancel subscription",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/subscriptions/:subscriptionId/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "subscriptions",
-                ":subscriptionId",
-                "cancel"
-              ],
-              "variable": [
-                {
-                  "key": "subscriptionId",
-                  "value": "{{subscriptionId}}"
-                }
-              ]
-            },
-            "description": "Owner, studio admin or app_manager. Idempotent."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Tenants",
-      "description": "GET /tenant works for any role. /tenants list+create need platform:write (manager@kedemlife.app, portal admin). PATCH: app_manager any field; studio admin only name + primaryColor of their own studio.",
-      "item": [
-        {
-          "name": "My studio",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/tenant",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tenant"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "List studios (app_manager)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/tenants",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tenants"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Create studio (app_manager)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tenants",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tenants"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Harbourside Strength\",\n  \"slug\": \"harbourside\",\n  \"plan\": \"growth\",\n  \"seats\": 200,\n  \"primaryColor\": \"#0ea5e9\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "201 Tenant; 409 slug taken."
-          },
-          "response": []
-        },
-        {
-          "name": "Update studio",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/tenants/:tenantId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tenants",
-                ":tenantId"
-              ],
-              "variable": [
-                {
-                  "key": "tenantId",
-                  "value": "{{tenantId}}"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Ironworks Performance Lab\",\n  \"primaryColor\": \"#b6ef21\",\n  \"plan\": \"scale\",\n  \"seats\": 500\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "plan and seats apply only for app_manager; silently dropped for a studio admin."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Marketing",
-      "description": "Public forms; rate limit 10 / 15 min / IP shared between the two.",
-      "item": [
-        {
-          "name": "Contact form",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/contact",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "contact"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Sam\",\n  \"lastName\": \"Rivera\",\n  \"email\": \"sam@example.com\",\n  \"phone\": \"+1 555 010 0199\",\n  \"topic\": \"coaching\",\n  \"message\": \"Do you run small-group strength blocks in the evenings?\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "201 { id }. topic: coaching | testing | specialists | orders | platform | other."
-          },
-          "response": []
-        },
-        {
-          "name": "Newsletter sign-up",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/newsletter",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "newsletter"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"sam@example.com\",\n  \"source\": \"footer\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "204; re-subscribes an existing address."
-          },
-          "response": []
-        }
-      ]
-    }
+ "info": {
+  "name": "Kedem Life API",
+  "description": "Every route of the Kedem Life REST API (server/openapi.json is the reference). Set {{baseUrl}} to the API root (default http://localhost:4000/api), run Auth > Login, then call anything: protected requests send Bearer {{token}} from the collection auth. Demo password for every seed account: kedemlife.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "auth": {
+  "type": "bearer",
+  "bearer": [
+   {
+    "key": "token",
+    "value": "{{token}}",
+    "type": "string"
+   }
   ]
+ },
+ "variable": [
+  {
+   "key": "baseUrl",
+   "value": "http://localhost:4000/api",
+   "type": "string"
+  },
+  {
+   "key": "token",
+   "value": "",
+   "type": "string"
+  },
+  {
+   "key": "refreshToken",
+   "value": "",
+   "type": "string"
+  },
+  {
+   "key": "memberId",
+   "value": "u-member-1",
+   "type": "string"
+  },
+  {
+   "key": "tenantId",
+   "value": "t-ironworks",
+   "type": "string"
+  },
+  {
+   "key": "userId",
+   "value": "u-coach-mara",
+   "type": "string"
+  },
+  {
+   "key": "providerId",
+   "value": "u-coach-mara",
+   "type": "string"
+  },
+  {
+   "key": "appointmentId",
+   "value": "",
+   "type": "string"
+  },
+  {
+   "key": "productId",
+   "value": "p-1",
+   "type": "string"
+  },
+  {
+   "key": "slug",
+   "value": "foundation-12-week",
+   "type": "string"
+  },
+  {
+   "key": "orderId",
+   "value": "",
+   "type": "string"
+  },
+  {
+   "key": "subscriptionId",
+   "value": "",
+   "type": "string"
+  },
+  {
+   "key": "date",
+   "value": "2026-09-15",
+   "type": "string"
+  },
+  {
+   "key": "postId",
+   "value": "post-zone-2",
+   "type": "string"
+  },
+  {
+   "key": "postSlug",
+   "value": "why-zone-2-is-the-base-of-everything",
+   "type": "string"
+  }
+ ],
+ "item": [
+  {
+   "name": "System",
+   "description": "Public health, OpenAPI document and Swagger UI.",
+   "item": [
+    {
+     "name": "Health",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/health",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "health"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "OpenAPI document",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/openapi.json",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "openapi.json"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Swagger UI (HTML)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/docs",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "docs"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Auth",
+   "description": "Run \"Login\" first: its test script stores accessToken in the collection variable {{token}}, which every protected request sends as Bearer.",
+   "item": [
+    {
+     "name": "Login",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/login",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "login"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"member@kedemlife.app\",\n  \"password\": \"kedemlife\",\n  \"portal\": \"member\",\n  \"rememberMe\": true\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "Demo accounts (password kedemlife): member@ (portal member), coach@ (portal coach), admin@ and manager@ (portal admin). Rate limit 30 / 15 min / IP."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('login ok', () => pm.response.to.have.status(200));",
+         "const json = pm.response.json();",
+         "pm.collectionVariables.set('token', json.accessToken);",
+         "pm.collectionVariables.set('refreshToken', json.refreshToken);",
+         "pm.collectionVariables.set('memberId', json.user.id);",
+         "pm.collectionVariables.set('tenantId', json.tenant.id);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Register",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/register",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "register"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"firstName\": \"Jordan\",\n  \"lastName\": \"Lee\",\n  \"email\": \"jordan.lee+{{$timestamp}}@example.com\",\n  \"password\": \"longenough2\",\n  \"phone\": \"+1 555 010 0100\",\n  \"goal\": \"Run a 10k\",\n  \"tenantSlug\": \"ironworks\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "Creates a member in the named studio (default studio when tenantSlug is omitted) and signs them in. 409 email_taken / seats_full, 422 weak password."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('session issued', () => pm.response.to.have.status(pm.response.code === 201 ? 201 : 200));",
+         "const json = pm.response.json();",
+         "if (json && json.accessToken) {",
+         "  pm.collectionVariables.set('token', json.accessToken);",
+         "  pm.collectionVariables.set('refreshToken', json.refreshToken);",
+         "  if (json.user) pm.collectionVariables.set('memberId', json.user.id);",
+         "  if (json.tenant) pm.collectionVariables.set('tenantId', json.tenant.id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Me",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/auth/me",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "me"
+       ]
+      },
+      "description": "Fresh user + tenant for the token; no tokens re-issued."
+     },
+     "response": []
+    },
+    {
+     "name": "Update profile",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/me",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "me"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"firstName\": \"Jordan\",\n  \"bio\": \"Weekend trail runner.\",\n  \"location\": \"Beacon, NY\",\n  \"phone\": null\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "All fields optional; null clears phone, avatarUrl, title, bio, location. Returns UserProfile."
+     },
+     "response": []
+    },
+    {
+     "name": "Refresh token",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/refresh",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "refresh"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "Rotates the refresh token: the presented one is revoked (401 if reused)."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('session issued', () => pm.response.to.have.status(pm.response.code === 201 ? 201 : 200));",
+         "const json = pm.response.json();",
+         "if (json && json.accessToken) {",
+         "  pm.collectionVariables.set('token', json.accessToken);",
+         "  pm.collectionVariables.set('refreshToken', json.refreshToken);",
+         "  if (json.user) pm.collectionVariables.set('memberId', json.user.id);",
+         "  if (json.tenant) pm.collectionVariables.set('tenantId', json.tenant.id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Logout",
+     "request": {
+      "method": "POST",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/auth/logout",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "logout"
+       ]
+      },
+      "description": "Revokes the session refresh tokens. 204."
+     },
+     "response": []
+    },
+    {
+     "name": "Request password reset",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/password-reset",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "password-reset"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"member@kedemlife.app\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "Always 204, even for unknown addresses."
+     },
+     "response": []
+    },
+    {
+     "name": "Confirm password reset",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/password-reset/confirm",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "password-reset",
+        "confirm"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"token\": \"paste-token-from-email-link\",\n  \"password\": \"newlongpassword\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "204 on success; 400 reset_invalid when the token is unknown, used or older than 30 min. Revokes every session."
+     },
+     "response": []
+    },
+    {
+     "name": "Change password",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/auth/change-password",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "auth",
+        "change-password"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"currentPassword\": \"kedemlife\",\n  \"newPassword\": \"longenough2\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "204 on success; 400 invalid_credentials when currentPassword is wrong."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Directory",
+   "description": "Who you can see: member -> coaches; coach -> assigned members + coaches; admin -> whole studio; app_manager -> everyone.",
+   "item": [
+    {
+     "name": "Mapped (people I may see)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/directory/mapped",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "directory",
+        "mapped"
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "List by role",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/directory?role=coach",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "directory"
+       ],
+       "query": [
+        {
+         "key": "role",
+         "value": "coach",
+         "description": "member | coach | admin | app_manager (members cannot list members)"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Profile",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/directory/:userId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "directory",
+        ":userId"
+       ],
+       "variable": [
+        {
+         "key": "userId",
+         "value": "{{userId}}"
+        }
+       ]
+      },
+      "description": "Returns 200 with JSON null when unknown or not visible."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Providers",
+   "description": "Public specialist finder. Seed providers: u-coach-mara, u-coach-devon, u-coach-priya, u-coach-tomas, u-coach-anke, u-coach-jae (timezone America/New_York, 60-minute slots).",
+   "item": [
+    {
+     "name": "List providers",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/providers?discipline=coaching&query=strength",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "providers"
+       ],
+       "query": [
+        {
+         "key": "discipline",
+         "value": "coaching",
+         "disabled": true,
+         "description": "coaching | nutrition | physiotherapy | medical | mental_performance"
+        },
+        {
+         "key": "query",
+         "value": "strength",
+         "disabled": true,
+         "description": "substring of name, title or credential"
+        }
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Provider",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/providers/:providerId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "providers",
+        ":providerId"
+       ],
+       "variable": [
+        {
+         "key": "providerId",
+         "value": "{{providerId}}"
+        }
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "200 with JSON null when unknown."
+     },
+     "response": []
+    },
+    {
+     "name": "Availability for a day",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/providers/:providerId/availability?date={{date}}",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "providers",
+        ":providerId",
+        "availability"
+       ],
+       "query": [
+        {
+         "key": "date",
+         "value": "{{date}}",
+         "description": "YYYY-MM-DD in the provider timezone"
+        }
+       ],
+       "variable": [
+        {
+         "key": "providerId",
+         "value": "{{providerId}}"
+        }
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Appointments",
+   "description": "Book at a published slot (see Providers > Availability). Durations 30/45/60; channel must be one the provider offers.",
+   "item": [
+    {
+     "name": "List appointments",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/appointments",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "appointments"
+       ]
+      },
+      "description": "member -> own; coach -> as provider; admin -> studio; app_manager -> all."
+     },
+     "response": []
+    },
+    {
+     "name": "Book appointment",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/appointments",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "appointments"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"providerId\": \"{{providerId}}\",\n  \"startsAt\": \"{{date}}T14:00:00.000Z\",\n  \"durationMinutes\": 60,\n  \"channel\": \"zoom\",\n  \"goal\": \"Build a base for a spring 10k\",\n  \"notes\": \"Prefer mornings.\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Appointment (status confirmed). 400 provider not bookable, 403 other studio, 409 past/taken slot, 422 channel/duration/outside hours."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 201) {",
+         "  pm.collectionVariables.set('appointmentId', pm.response.json().id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Cancel appointment",
+     "request": {
+      "method": "POST",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/appointments/:appointmentId/cancel",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "appointments",
+        ":appointmentId",
+        "cancel"
+       ],
+       "variable": [
+        {
+         "key": "appointmentId",
+         "value": "{{appointmentId}}"
+        }
+       ]
+      },
+      "description": "Member, provider, studio admin or app_manager. 409 if already completed / no_show."
+     },
+     "response": []
+    },
+    {
+     "name": "Update status",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/appointments/:appointmentId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "appointments",
+        ":appointmentId"
+       ],
+       "variable": [
+        {
+         "key": "appointmentId",
+         "value": "{{appointmentId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"status\": \"completed\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "confirmed | completed | no_show. Provider, studio admin or app_manager (not the member). 409 if cancelled."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Progress",
+   "description": "memberId is set by Login (own id). Access: the member, app_manager, studio admin, assigned coach, or a coach with a non-cancelled session with the member.",
+   "item": [
+    {
+     "name": "Body metrics",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/body-metrics",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "body-metrics"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Log body metric",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/body-metrics",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "body-metrics"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"recordedOn\": \"{{date}}\",\n  \"weightKg\": 78.4,\n  \"heightCm\": 178,\n  \"bodyFatPercent\": 18.2,\n  \"restingHeartRate\": 56,\n  \"waistCm\": 84,\n  \"note\": \"Morning, fasted\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201; same recordedOn overwrites."
+     },
+     "response": []
+    },
+    {
+     "name": "Activity (last N days)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/activity?days=30",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "activity"
+       ],
+       "query": [
+        {
+         "key": "days",
+         "value": "30",
+         "description": "1..366, default 30"
+        }
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Upsert activity for a day",
+     "request": {
+      "method": "PUT",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/activity/:date",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "activity",
+        ":date"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        },
+        {
+         "key": "date",
+         "value": "{{date}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"steps\": 9400,\n  \"activeMinutes\": 52,\n  \"caloriesBurned\": 620,\n  \"caloriesConsumed\": 2150,\n  \"proteinGrams\": 148,\n  \"waterMl\": 2600,\n  \"sleepHours\": 7.5,\n  \"workouts\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Replaces the whole day; omitted fields become 0."
+     },
+     "response": []
+    },
+    {
+     "name": "Goal",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/goal",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "goal"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "description": "Default goal when none saved."
+     },
+     "response": []
+    },
+    {
+     "name": "Upsert goal",
+     "request": {
+      "method": "PUT",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/goal",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "goal"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"targetWeightKg\": 74,\n  \"dailyCalorieTarget\": 2200,\n  \"dailyProteinTarget\": 150,\n  \"dailyStepTarget\": 10000,\n  \"weeklyWorkoutTarget\": 4,\n  \"focus\": \"Strength and a spring 10k\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Catalog",
+   "description": "Public reads; writes need catalog:write (admin, app_manager). Seed products p-1..p-12; p-9 is the membership (slug membership-performance).",
+   "item": [
+    {
+     "name": "List products",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/products?category=program&query=foundation",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "products"
+       ],
+       "query": [
+        {
+         "key": "category",
+         "value": "program",
+         "disabled": true,
+         "description": "program | supplement | equipment | apparel | testing | membership"
+        },
+        {
+         "key": "query",
+         "value": "foundation",
+         "disabled": true,
+         "description": "substring of name or tagline"
+        }
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Product by slug",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/products/:slug",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "products",
+        ":slug"
+       ],
+       "variable": [
+        {
+         "key": "slug",
+         "value": "{{slug}}"
+        }
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "200 with JSON null when unknown or inactive."
+     },
+     "response": []
+    },
+    {
+     "name": "Create product (admin)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/products",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "products"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"slug\": \"mobility-reset-4-week\",\n  \"name\": \"Mobility Reset: 4 Weeks\",\n  \"tagline\": \"Move better in a month\",\n  \"description\": \"Four weeks of daily 15-minute mobility sessions.\",\n  \"category\": \"program\",\n  \"priceMinor\": 4900,\n  \"currency\": \"USD\",\n  \"compareAtMinor\": 6900,\n  \"accent\": \"#b6ef21\",\n  \"inStock\": true,\n  \"digital\": true,\n  \"instructorId\": \"u-coach-mara\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Product; 409 slug taken; 403 without catalog:write."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 201) {",
+         "  pm.collectionVariables.set('productId', pm.response.json().id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Update product (admin)",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/products/:productId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "products",
+        ":productId"
+       ],
+       "variable": [
+        {
+         "key": "productId",
+         "value": "{{productId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"priceMinor\": 17900,\n  \"badge\": \"Autumn offer\",\n  \"inStock\": true,\n  \"active\": true\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Any subset of the create fields plus active. 404 unknown id."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Content (blog)",
+   "description": "Public reads; writes need content:write (coach, admin, app_manager). Seed posts post-zone-2, post-protein, post-knee, post-sleep, post-open-day (published) and post-golf-draft (draft by u-coach-devon).",
+   "item": [
+    {
+     "name": "Feed (public)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "auth": {
+       "type": "noauth"
+      },
+      "url": {
+       "raw": "{{baseUrl}}/posts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts"
+       ],
+       "query": [
+        {
+         "key": "tenant",
+         "value": "ironworks",
+         "disabled": true,
+         "description": "studio slug"
+        },
+        {
+         "key": "author",
+         "value": "u-coach-mara",
+         "disabled": true,
+         "description": "user id — that coach's own blog"
+        },
+        {
+         "key": "tag",
+         "value": "training",
+         "disabled": true,
+         "description": "case-insensitive"
+        },
+        {
+         "key": "query",
+         "value": "zone 2",
+         "disabled": true,
+         "description": "substring of title, summary, tags or the article body"
+        },
+        {
+         "key": "page",
+         "value": "1",
+         "disabled": true
+        },
+        {
+         "key": "pageSize",
+         "value": "9",
+         "disabled": true,
+         "description": "1–50"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Post by slug (public)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "auth": {
+       "type": "noauth"
+      },
+      "url": {
+       "raw": "{{baseUrl}}/posts/:slug",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts",
+        ":slug"
+       ],
+       "variable": [
+        {
+         "key": "slug",
+         "value": "{{postSlug}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "My posts",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/posts/mine",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts",
+        "mine"
+       ]
+      },
+      "description": "Drafts included. Coach → own; admin → studio; app_manager → all."
+     },
+     "response": []
+    },
+    {
+     "name": "Create post",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/posts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"title\": \"Tempo runs for lifters\",\n  \"slug\": \"tempo-runs-for-lifters\",\n  \"excerpt\": \"Why a weekly tempo run makes your squat day feel easier.\",\n  \"tags\": [\n    \"Training\"\n  ],\n  \"coverImageUrl\": null,\n  \"blocks\": [\n    {\n      \"type\": \"paragraph\",\n      \"text\": \"Most lifters avoid running. Here is the one run worth keeping.\"\n    },\n    {\n      \"type\": \"heading\",\n      \"text\": \"The session\"\n    },\n    {\n      \"type\": \"list\",\n      \"items\": [\n        \"10 min easy\",\n        \"20 min comfortably hard\",\n        \"5 min walk\"\n      ]\n    },\n    {\n      \"type\": \"video\",\n      \"url\": \"https://www.youtube.com/watch?v=aUaInS6HIGo\",\n      \"caption\": \"Pacing walkthrough\"\n    }\n  ],\n  \"status\": \"draft\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Post. 409 slug_taken if the slug exists."
+     },
+     "response": []
+    },
+    {
+     "name": "Publish / update post",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/posts/:postId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts",
+        ":postId"
+       ],
+       "variable": [
+        {
+         "key": "postId",
+         "value": "{{postId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"status\": \"published\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Any subset of the create fields. status draft ⇄ published."
+     },
+     "response": []
+    },
+    {
+     "name": "Delete post",
+     "request": {
+      "method": "DELETE",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/posts/:postId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "posts",
+        ":postId"
+       ],
+       "variable": [
+        {
+         "key": "postId",
+         "value": "{{postId}}"
+        }
+       ]
+      },
+      "description": "204."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Orders",
+   "description": "Checkout is one transaction: order + manual charge + payment row; membership lines also start a subscription.",
+   "item": [
+    {
+     "name": "List orders",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/orders",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "orders"
+       ]
+      },
+      "description": "member -> own; coach -> orders with their products; admin -> studio; app_manager -> all."
+     },
+     "response": []
+    },
+    {
+     "name": "Place order",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/orders",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "orders"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"lines\": [\n    {\n      \"productId\": \"p-1\",\n      \"quantity\": 1\n    },\n    {\n      \"productId\": \"p-4\",\n      \"quantity\": 2\n    }\n  ],\n  \"method\": \"card\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Order (status paid). 409 out_of_stock / payment_failed; 422 unknown product or mixed currencies."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 201) {",
+         "  pm.collectionVariables.set('orderId', pm.response.json().id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Order",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/orders/:orderId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "orders",
+        ":orderId"
+       ],
+       "variable": [
+        {
+         "key": "orderId",
+         "value": "{{orderId}}"
+        }
+       ]
+      },
+      "description": "200 with JSON null when unknown or not visible."
+     },
+     "response": []
+    },
+    {
+     "name": "Update order status (staff)",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/orders/:orderId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "orders",
+        ":orderId"
+       ],
+       "variable": [
+        {
+         "key": "orderId",
+         "value": "{{orderId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"status\": \"shipped\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "awaiting_payment | paid | processing | shipped | delivered | refunded | cancelled. Coach/admin/app_manager only; members get 403."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Payments",
+   "description": "Needs payments:read (admin, app_manager). Log in as admin@kedemlife.app with portal \"admin\" first.",
+   "item": [
+    {
+     "name": "List payments",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/payments",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "payments"
+       ]
+      }
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Subscriptions",
+   "description": "Memberships. Members/coaches see their own; admins the studio; app_manager all.",
+   "item": [
+    {
+     "name": "List subscriptions",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/subscriptions",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "subscriptions"
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Subscribe to a membership",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/subscriptions",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "subscriptions"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"productId\": \"p-9\",\n  \"method\": \"card\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Subscription; 409 already_subscribed; 422 not a membership product."
+     },
+     "response": [],
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 201) {",
+         "  pm.collectionVariables.set('subscriptionId', pm.response.json().id);",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Cancel subscription",
+     "request": {
+      "method": "POST",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/subscriptions/:subscriptionId/cancel",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "subscriptions",
+        ":subscriptionId",
+        "cancel"
+       ],
+       "variable": [
+        {
+         "key": "subscriptionId",
+         "value": "{{subscriptionId}}"
+        }
+       ]
+      },
+      "description": "Owner, studio admin or app_manager. Idempotent."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Tenants",
+   "description": "GET /tenant works for any role. /tenants list+create need platform:write (manager@kedemlife.app, portal admin). PATCH: app_manager any field; studio admin only name + primaryColor of their own studio.",
+   "item": [
+    {
+     "name": "My studio",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/tenant",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "tenant"
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "List studios (app_manager)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/tenants",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "tenants"
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Create studio (app_manager)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/tenants",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "tenants"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"name\": \"Harbourside Strength\",\n  \"slug\": \"harbourside\",\n  \"plan\": \"growth\",\n  \"seats\": 200,\n  \"primaryColor\": \"#0ea5e9\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 Tenant; 409 slug taken."
+     },
+     "response": []
+    },
+    {
+     "name": "Update studio",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/tenants/:tenantId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "tenants",
+        ":tenantId"
+       ],
+       "variable": [
+        {
+         "key": "tenantId",
+         "value": "{{tenantId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"name\": \"Ironworks Performance Lab\",\n  \"primaryColor\": \"#b6ef21\",\n  \"plan\": \"scale\",\n  \"seats\": 500\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "plan and seats apply only for app_manager; silently dropped for a studio admin."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Marketing",
+   "description": "Public forms; rate limit 10 / 15 min / IP shared between the two.",
+   "item": [
+    {
+     "name": "Contact form",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/contact",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "contact"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"firstName\": \"Sam\",\n  \"lastName\": \"Rivera\",\n  \"email\": \"sam@example.com\",\n  \"phone\": \"+1 555 010 0199\",\n  \"topic\": \"coaching\",\n  \"message\": \"Do you run small-group strength blocks in the evenings?\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "201 { id }. topic: coaching | testing | specialists | orders | platform | other."
+     },
+     "response": []
+    },
+    {
+     "name": "Newsletter sign-up",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/newsletter",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "newsletter"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"sam@example.com\",\n  \"source\": \"footer\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "description": "204; re-subscribes an existing address."
+     },
+     "response": []
+    }
+   ]
+  }
+ ]
 }

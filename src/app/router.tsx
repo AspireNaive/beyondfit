@@ -40,6 +40,12 @@ const ShopPage = lazy(() => import('@/features/shop/ShopPage'))
 const ProductPage = lazy(() => import('@/features/shop/ProductPage'))
 const CheckoutPage = lazy(() => import('@/features/shop/CheckoutPage'))
 
+// Blog (public feed; staff manage and write inside the app)
+const BlogPage = lazy(() => import('@/features/blog/BlogPage'))
+const PostPage = lazy(() => import('@/features/blog/PostPage'))
+const ManagePostsPage = lazy(() => import('@/features/blog/ManagePostsPage'))
+const PostEditorPage = lazy(() => import('@/features/blog/PostEditorPage'))
+
 // Specialists / booking
 const SpecialistsPage = lazy(() => import('@/features/booking/SpecialistsPage'))
 const BookingPage = lazy(() => import('@/features/booking/BookingPage'))
@@ -97,6 +103,11 @@ export const router = createBrowserRouter([
       { path: 'specialists', element: shell(<SpecialistsPage />) },
       { path: 'shop', element: shell(<ShopPage />) },
       { path: 'shop/:slug', element: shell(<ProductPage />) },
+      { path: 'blog', element: shell(<BlogPage />) },
+      // Each studio and each coach has their own blog.
+      { path: 'blog/studio/:tenantSlug', element: shell(<BlogPage />) },
+      { path: 'blog/author/:authorId', element: shell(<BlogPage />) },
+      { path: 'blog/:slug', element: shell(<PostPage />) },
       { path: '*', element: shell(<NotFoundPage />) },
     ],
   },
@@ -230,6 +241,36 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'checkout', element: shell(<CheckoutPage />) },
+      // Blog: the feed and articles are readable by every signed-in role;
+      // the management list and editor need content:write.
+      { path: 'blog/feed', element: shell(<BlogPage />) },
+      { path: 'blog/feed/studio/:tenantSlug', element: shell(<BlogPage />) },
+      { path: 'blog/feed/author/:authorId', element: shell(<BlogPage />) },
+      { path: 'blog/read/:slug', element: shell(<PostPage />) },
+      {
+        path: 'blog',
+        element: shell(
+          <RequirePermission permission={Permission.PublishContent}>
+            <ManagePostsPage />
+          </RequirePermission>,
+        ),
+      },
+      {
+        path: 'blog/new',
+        element: shell(
+          <RequirePermission permission={Permission.PublishContent}>
+            <PostEditorPage />
+          </RequirePermission>,
+        ),
+      },
+      {
+        path: 'blog/:postId/edit',
+        element: shell(
+          <RequirePermission permission={Permission.PublishContent}>
+            <PostEditorPage />
+          </RequirePermission>,
+        ),
+      },
       { path: '*', element: shell(<NotFoundPage />) },
     ],
   },

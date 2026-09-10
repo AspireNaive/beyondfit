@@ -32,9 +32,18 @@ import {
   type Product,
   type Subscription,
 } from '@/domain/commerce/model'
+import {
+  PostStatus,
+  postMatches,
+  readingMinutes,
+  type Post,
+  type PostFilter,
+  type PostInput,
+} from '@/domain/content/model'
 import type {
   AuthPort,
   CatalogPort,
+  ContentPort,
   Container,
   DirectoryPort,
   MarketingPort,
@@ -44,7 +53,7 @@ import type {
   SchedulingPort,
   TenantPort,
 } from '@/domain/ports'
-import { id, type IsoDate, type OrderId, type UserId } from '@/domain/shared/types'
+import { id, type IsoDate, type OrderId, type Page, type PostId, type UserId } from '@/domain/shared/types'
 import { today } from '@/shared/lib/dates'
 import {
   ACTIVITY,
@@ -55,6 +64,7 @@ import {
   GOALS,
   ORDERS,
   PAYMENTS,
+  POSTS,
   PRODUCTS,
   PROVIDERS,
   SUBSCRIPTIONS,
@@ -77,6 +87,7 @@ const appointments: Appointment[] = [...APPOINTMENTS]
 const orders: Order[] = [...ORDERS]
 const bodyMetrics: BodyMetricEntry[] = [...BODY_METRICS]
 const users: UserProfile[] = [...USERS]
+const posts: Post[] = [...POSTS]
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -529,6 +540,112 @@ class MockTenants implements TenantPort {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Content (blog)
+// ---------------------------------------------------------------------------
+
+const POSTS_DEFAULT_PAGE_SIZE = 9
+
+const newestFirst = (a: Post, b: Post) =>
+  (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt)
+
+class MockContent implements ContentPort {
+  async listPosts(filter: PostFilter = {}): Promise<Page<Post>> {
+    let result = posts.filter((p) => p.status === PostStatus.Published)
+    if (filter.tenantSlug) result = result.filter((p) => p.tenantSlug === filter.tenantSlug)
+    if (filter.authorId) result = result.filter((p) => p.authorId === filter.authorId)
+    if (filter.tag) {
+      const tag = filter.tag.toLowerCase()
+      result = result.filter((p) => p.tags.some((t) => t.toLowerCase() === tag))
+    }
+    if (filter.query) result = result.filter((p) => postMatches(p, filter.query!))
+    result = [...result].sort(newestFirst)
+
+    const pageSize = filter.pageSize ?? POSTS_DEFAULT_PAGE_SIZE
+    const page = Math.max(1, filter.page ?? 1)
+    const start = (page - 1) * pageSize
+    return delay({ items: result.slice(start, start + pageSize), total: result.length, page, pageSize })
+  }
+
+  async getPost(slug: string): Promise<Post | null> {
+    // The mock has no request identity, so drafts are visible by slug too —
+    // that is what lets the editor preview a draft. The API checks the caller.
+    return delay(posts.find((p) => p.slug === slug) ?? null, 180)
+  }
+
+  async listManagedPosts(viewer: UserProfile): Promise<readonly Post[]> {
+    let result = posts
+    if (viewer.role === Role.Coach) result = result.filter((p) => p.authorId === viewer.id)
+    else if (viewer.role === Role.Admin) result = result.filter((p) => p.tenantId === viewer.tenantId)
+    else if (viewer.role === Role.Member) result = []
+    return delay([...result].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+  }
+
+  async createPost(input: PostInput, author: UserProfile): Promise<Post> {
+    await delay(null, 420)
+    if (posts.some((p) => p.slug === input.slug)) throw new Error('A post with that link already exists.')
+    const tenant = tenantOf(author)
+    const now = new Date().toISOString()
+    const created: Post = {
+      id: id<'Post'>(`post-${Date.now()}`),
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      slug: input.slug,
+      title: input.title,
+      excerpt: input.excerpt,
+      coverImageUrl: input.coverImageUrl ?? null,
+      tags: input.tags,
+      blocks: input.blocks,
+      authorId: author.id,
+      authorName: `${author.firstName} ${author.lastName}`,
+      authorRole: author.role,
+      authorTitle: author.title,
+      authorAvatarUrl: author.avatarUrl ?? null,
+      status: input.status,
+      publishedAt: input.status === PostStatus.Published ? now : null,
+      createdAt: now,
+      updatedAt: now,
+      readingMinutes: readingMinutes(input.blocks),
+    }
+    posts.unshift(created)
+    return created
+  }
+
+  async updatePost(postId: PostId, patch: Partial<PostInput>): Promise<Post> {
+    await delay(null, 380)
+    const index = posts.findIndex((p) => p.id === postId)
+    if (index === -1) throw new Error('Post not found.')
+    const current = posts[index]!
+    if (patch.slug && patch.slug !== current.slug && posts.some((p) => p.slug === patch.slug)) {
+      throw new Error('A post with that link already exists.')
+    }
+    const now = new Date().toISOString()
+    const status = patch.status ?? current.status
+    const updated: Post = {
+      ...current,
+      ...patch,
+      status,
+      publishedAt:
+        status === PostStatus.Published && !current.publishedAt ? now : current.publishedAt,
+      updatedAt: now,
+      readingMinutes: readingMinutes(patch.blocks ?? current.blocks),
+    }
+    posts[index] = updated
+    return updated
+  }
+
+  async setPostStatus(postId: PostId, status: PostStatus): Promise<Post> {
+    return this.updatePost(postId, { status })
+  }
+
+  async deletePost(postId: PostId): Promise<void> {
+    await delay(null, 300)
+    const index = posts.findIndex((p) => p.id === postId)
+    if (index >= 0) posts.splice(index, 1)
+  }
+}
+
 export const mockContainer: Container = {
   auth: new MockAuth(),
   directory: new MockDirectory(),
@@ -539,4 +656,5 @@ export const mockContainer: Container = {
   payments: new MockPayments(),
   tenants: new MockTenants(),
   marketing: new MockMarketing(),
+  content: new MockContent(),
 }

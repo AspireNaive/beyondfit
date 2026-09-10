@@ -2,8 +2,9 @@
 
 A multi-tenant coaching platform (PaaS) for gyms and studios: a marketing site
 with a video-background homepage, four sign-in portals, 1:1 booking with
-coaches and clinical specialists, member progress tracking, a storefront, and
-role-scoped dashboards for members, coaches, admins and platform operators.
+coaches and clinical specialists, member progress tracking, a storefront, a
+public blog written by coaches and studio staff, and role-scoped dashboards for
+members, coaches, admins and platform operators.
 
 This repository is the **React front end**. It runs standalone today against an
 in-memory adapter, and switches to the Node API in `server/` with one environment variable.
@@ -15,8 +16,8 @@ in-memory adapter, and switches to the Node API in `server/` with one environmen
 The app is no longer demo-only: `server/` is a Node.js (Express 5) API on
 Cloud Firestore (Firebase project `beyondfit-cc69a`) that implements every
 port in `src/domain/ports.ts` — auth, directory, specialists and booking,
-progress, catalogue, orders and payments, memberships, tenants, and the
-marketing forms. The front end talks to it through
+progress, catalogue, orders and payments, memberships, tenants, the blog, and
+the marketing forms. The front end talks to it through
 `src/infrastructure/http/container.ts`; `VITE_API_MODE=http` is the default and
 `mock` keeps the in-memory adapter for UI work without a database.
 
@@ -29,10 +30,30 @@ cd server && cp .env.example .env && npm run db:seed -- --reset && npm run dev
 npm run dev
 ```
 
-Root shortcuts: `npm run dev:api`, `npm run test:api`, `npm run build:api`, `npm run db:seed`.
+Root shortcuts: `npm run dev:api`, `npm run test:api`, `npm run build:api`, `npm run db:seed`, `npm run db:seed:posts`.
 Docs: `server/README.md` (setup, configuration, GoDaddy deployment),
 `docs/API.md` (every endpoint), `/api/docs` on a running server (Swagger UI),
 `postman/kedem-life-api.postman_collection.json`.
+
+## Blog
+
+`/blog` is a public, social-style feed — readable signed in or not — of
+articles written by coaches, studio admins and platform staff
+(`content:write`). Newest first, one column, and older posts keep loading as
+you scroll. Every studio has its own blog at `/blog/studio/:slug` and every
+coach theirs at `/blog/author/:id`; the search box looks inside the article
+body, not just at titles. Each article is a list of typed blocks (headings,
+paragraphs, images, video links, quotes, bullet lists) rather than HTML, so
+rendering is safe by construction and the reader gets a table of contents and
+a reading-progress bar for free. Staff write and manage posts at `/app/blog`
+(drafts, publish/unpublish, delete); a coach manages their own posts, an admin
+their studio's, an app manager everything. YouTube and Vimeo links embed
+inline; other video links open in a new tab.
+
+Posts live in Firestore (`posts` and `postSlugs`) behind the API in `server/`;
+the in-memory adapter is only used with `VITE_API_MODE=mock`. `npm run
+db:seed` loads the demo posts with everything else; `npm run db:seed:posts`
+adds just the posts to a database that already has studios and people.
 
 ## Running it
 
@@ -96,6 +117,11 @@ Both talk to the same Firestore database.
 >
 > **Vercel** serves `dist/` from its CDN and runs the same Express app as a
 > serverless function (`api/index.ts`, rewritten from `/api/*`).
+>
+> Neither host deploys Firestore indexes. After merging a change that adds
+> some (`firestore.indexes.json`), run
+> `npx firebase deploy --only firestore:indexes --project beyondfit-cc69a` once;
+> the API sorts in memory until they exist, so the site stays up meanwhile.
 
 ```bash
 npm run deploy           # builds, then deploys to the live channel

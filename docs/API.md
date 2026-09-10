@@ -46,7 +46,7 @@ end can render its own empty state; they are flagged in the tables.
   the user.
 - `code` appears only for specific failures: `invalid_credentials`,
   `wrong_portal`, `suspended`, `email_taken`, `seats_full`, `reset_invalid`,
-  `out_of_stock`, `payment_failed`, `already_subscribed`, `validation`.
+  `out_of_stock`, `payment_failed`, `already_subscribed`, `slug_taken`, `validation`.
 - `errors` maps a dotted field path (or `_`) to messages. It is present on
   every 422 schema failure and on some 422 business-rule failures.
 - Schema validation (zod) is 422. Malformed JSON is 400. A duplicate key (email, product slug, booking slot) is 409.
@@ -66,13 +66,13 @@ draft-8) and `Retry-After` headers. Note the 429 body is plain
 
 ## Roles & permissions
 
-`server/src/domain.ts` defines four roles and eight permissions
+`server/src/domain.ts` defines four roles and nine permissions
 (`ROLE_PERMISSIONS`). Each role includes everything the row before it has:
 
 | Role | Permissions |
 |---|---|
 | `member` | `progress:read:self`, `appointments:write` |
-| `coach` | member's + `progress:read:assigned`, `orders:read` |
+| `coach` | member's + `progress:read:assigned`, `orders:read`, `content:write` |
 | `admin` | coach's + `payments:read`, `catalog:write`, `tenant:write` |
 | `app_manager` | admin's + `platform:write` |
 
@@ -81,6 +81,7 @@ Where the permissions bite:
 | Permission | Gates |
 |---|---|
 | `catalog:write` | `POST /products`, `PATCH /products/{id}` |
+| `content:write` | `GET /posts/mine`, `POST /posts`, `PATCH /posts/{id}`, `DELETE /posts/{id}` (then ownership rules apply) |
 | `payments:read` | `GET /payments` |
 | `platform:write` | `GET /tenants`, `POST /tenants`, `PATCH /tenants/{id}` on any studio with every field |
 | `tenant:write` | `PATCH /tenants/{id}` on the caller's own studio, `name` and `primaryColor` only |
@@ -176,6 +177,29 @@ Public storefront reads; writes need `catalog:write` (admin, app_manager).
 | POST | `/products` | bearer, `catalog:write` | Create | Body `{ slug, name, description, category, priceMinor, tagline?="", currency?="USD", compareAtMinor?, imageUrl?, accent?="#b6ef21", inStock?=true, badge?, digital?=false, instructorId? }` → 201 `Product`. 409 if the slug exists. |
 | PATCH | `/products/{productId}` | bearer, `catalog:write` | Update | Same path shape as the GET but keyed by **id**. Any subset of the create fields plus `active` (false hides it from the catalogue and checkout) → 200 `Product` (returned even if inactive). 404 unknown id; a colliding slug surfaces as 409 from the database. |
 
+## Content (blog)
+
+Articles written by coaches and studio staff, readable by anyone — no token
+needed. Stored in Firestore (`posts`, plus `postSlugs` for link uniqueness).
+Every studio (`?tenant=`) and every coach (`?author=`) has their own feed.
+Reads are public; writes need `content:write` (coach, admin, app_manager). Ownership:
+a **coach** manages only posts they wrote, an **admin** every post in their
+studio, an **app_manager** every post. A post body is a list of typed blocks —
+`{ type: "heading" | "paragraph", text }`, `{ type: "image", url, alt, caption? }`,
+`{ type: "video", url, caption? }`, `{ type: "quote", text, attribution? }`,
+`{ type: "list", items[] }` — never HTML. Image and video `url`s must be
+`http(s)`; the front end embeds YouTube and Vimeo links and renders anything
+else as a link.
+
+| Method | Path | Auth | Purpose | Notes |
+|---|---|---|---|---|
+| GET | `/posts` | public | The feed | Query `tenant?` (studio slug — that studio's own blog), `author?` (user id — that coach's own blog), `tag?` (case-insensitive), `query?` (substring of title, summary, tags **or the article body**), `page?=1`, `pageSize?=9` (1–50). Published posts only, newest `publishedAt` first → `{ items: Post[], total, page, pageSize }`. |
+| GET | `/posts/mine` | bearer, `content:write` | Posts I manage | Drafts included, most recently edited first → `Post[]`. Scope by role as above. |
+| GET | `/posts/{slug}` | public | One post by **slug** | 200 `Post` **or `null`**. Drafts are `null` unless the bearer may manage the post. |
+| POST | `/posts` | bearer, `content:write` | Create | Body `{ title (3–160), slug, excerpt (10–300), blocks (1–200), tags?=[] (≤8), coverImageUrl?, status?="draft" }` → 201 `Post`. Author and studio come from the token. 409 `slug_taken`. |
+| PATCH | `/posts/{postId}` | bearer, `content:write` | Update / publish / unpublish | Any subset of the create fields → 200 `Post`. `status: "published"` stamps `publishedAt` the first time only; unpublishing keeps it so the feed order is stable. 403 outside the caller's scope, 404 unknown, 409 slug clash. |
+| DELETE | `/posts/{postId}` | bearer, `content:write` | Delete | → 204 and the slug is free again. 403 / 404 as above. |
+
 ## Orders
 
 All routes require a bearer token.
@@ -238,4 +262,7 @@ account uses the password **`kedemlife`**.
 The admin portal accepts both `admin` and `app_manager` accounts. Useful seed
 ids: tenant `t-ironworks` (slug `ironworks`), member `u-member-1`, coach /
 provider `u-coach-mara`, products `p-1` … `p-12` (`p-9`, slug
-`membership-performance`, is the membership).
+`membership-performance`, is the membership), blog posts `post-zone-2`,
+`post-protein`, `post-knee`, `post-sleep`, `post-open-day` (published) and
+`post-golf-draft` (a draft by `u-coach-devon`). `npm run db:seed:posts` adds
+just the blog posts to a database that already has studios and people.

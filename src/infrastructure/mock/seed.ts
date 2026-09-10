@@ -7,6 +7,7 @@ import {
   type Provider,
 } from '@/domain/scheduling/model'
 import type { ActivityEntry, BodyMetricEntry, MemberGoal } from '@/domain/progress/model'
+import { PostStatus, readingMinutes, type Post, type PostBlock } from '@/domain/content/model'
 import {
   OrderStatus,
   PaymentMethod,
@@ -774,6 +775,251 @@ export const SUBSCRIPTIONS: Subscription[] = memberSeeds.slice(0, 16).map((membe
   startedAt: isoAt(-intBetween(40, 600), 10),
   renewsAt: isoAt(intBetween(1, 30), 10),
 }))
+
+// ---------------------------------------------------------------------------
+// Blog posts
+// ---------------------------------------------------------------------------
+
+type SeedPost = {
+  id: string
+  authorId: string
+  slug: string
+  title: string
+  excerpt: string
+  coverImageUrl?: string
+  tags: string[]
+  blocks: PostBlock[]
+  /** Days ago the post went live; omit for a draft. */
+  publishedDaysAgo?: number
+}
+
+const postSeeds: SeedPost[] = [
+  {
+    id: 'post-zone-2',
+    authorId: 'u-coach-mara',
+    slug: 'why-zone-2-is-the-base-of-everything',
+    title: 'Why Zone 2 is the base of everything',
+    excerpt:
+      'Easy aerobic work feels too easy to matter. It is the single biggest lever most of our members have never pulled.',
+    tags: ['Training', 'Conditioning'],
+    publishedDaysAgo: 2,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'Every intake screen we run tells the same story: people who can lift respectably, sprint when asked, and yet cannot hold a conversation on a twenty-minute jog. The engine is missing.',
+      },
+      { type: 'heading', text: 'What Zone 2 actually is' },
+      {
+        type: 'paragraph',
+        text: 'Zone 2 is the highest intensity at which your body still clears lactate as fast as it makes it. Practically: you can talk in full sentences, your breathing is noticeable but controlled, and you could keep going for an hour without dreading it.',
+      },
+      {
+        type: 'list',
+        items: [
+          'Heart rate roughly 60–70% of your maximum',
+          'Nasal breathing is possible but not comfortable',
+          'You finish feeling like you could have done more — that is the point',
+        ],
+      },
+      { type: 'heading', text: 'Why it matters for strength athletes' },
+      {
+        type: 'paragraph',
+        text: 'More mitochondria and better fat oxidation mean you recover faster between sets, between sessions and between training blocks. Our members who add two easy aerobic sessions a week report better sleep within a month.',
+      },
+      {
+        type: 'quote',
+        text: 'The goal is not to make the easy days hard. It is to make the hard days possible.',
+        attribution: 'Mara Whitfield',
+      },
+      { type: 'heading', text: 'How to start this week' },
+      {
+        type: 'paragraph',
+        text: 'Pick a modality you do not hate: incline walking, cycling, rowing, a hike. Two sessions of 30–45 minutes. Hold the talk test the whole way. If you are unsure of your zones, book a testing session and we will measure them properly.',
+      },
+      { type: 'video', url: 'https://www.youtube.com/watch?v=aUaInS6HIGo', caption: 'A short walkthrough of the talk test.' },
+    ],
+  },
+  {
+    id: 'post-protein',
+    authorId: 'u-coach-priya',
+    slug: 'protein-how-much-and-when',
+    title: 'Protein: how much, and does timing matter?',
+    excerpt:
+      'The number most people need is higher than they think, and the timing question matters far less than the internet insists.',
+    tags: ['Nutrition'],
+    publishedDaysAgo: 6,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'Of every nutrition question we field, protein is the one where the evidence is clearest and the habits are weakest. Here is the short version.',
+      },
+      { type: 'heading', text: 'The number' },
+      {
+        type: 'paragraph',
+        text: 'For anyone training with intent, 1.6 to 2.2 grams per kilogram of body weight per day covers essentially everyone. If you are in a fat-loss phase, sit at the top of that range: protein is what protects the muscle you worked for.',
+      },
+      { type: 'heading', text: 'Timing' },
+      {
+        type: 'paragraph',
+        text: 'Spread it across three or four meals with at least 25–40 grams each. The anabolic window is real but it is hours wide, not minutes. Finish the day on target and you have done the important part.',
+      },
+      {
+        type: 'list',
+        items: [
+          'Breakfast is where most members fall short — aim for 30 g',
+          'Whole food first; a shake is a tool, not a meal plan',
+          'Older athletes need the higher end of the range',
+        ],
+      },
+      {
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=1600&q=80',
+        alt: 'A plate with grilled chicken, greens and grains',
+        caption: 'A 40-gram plate does not have to look like a bodybuilding meal.',
+      },
+    ],
+  },
+  {
+    id: 'post-knee',
+    authorId: 'u-coach-tomas',
+    slug: 'the-knee-pain-that-is-not-a-knee-problem',
+    title: 'The knee pain that is not a knee problem',
+    excerpt:
+      'Most anterior knee pain we see in the studio is a hip and ankle story. Here is how we assess it and what we do first.',
+    tags: ['Recovery', 'Physiotherapy'],
+    publishedDaysAgo: 13,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'The knee is a hinge caught between two joints that are supposed to move a lot. When the hip or the ankle stops doing its job, the knee pays.',
+      },
+      { type: 'heading', text: 'What we look at first' },
+      {
+        type: 'list',
+        items: [
+          'Ankle dorsiflexion — can the knee travel past the toes with the heel down?',
+          'Hip control in a single-leg squat — does the knee dive inward?',
+          'Training load over the last four weeks — did anything spike?',
+        ],
+      },
+      { type: 'heading', text: 'The first two weeks' },
+      {
+        type: 'paragraph',
+        text: 'We rarely stop people training. We change the angle, slow the tempo and add isometrics: a Spanish squat hold, split squats with a heel raise, and a lot of calf work. Pain that drops from a 6 to a 3 in a fortnight tells us we are on the right track.',
+      },
+      {
+        type: 'quote',
+        text: 'Rest is a diagnosis of nothing. Load is how tissue learns.',
+        attribution: 'Tomás Reyes, DPT',
+      },
+    ],
+  },
+  {
+    id: 'post-sleep',
+    authorId: 'u-coach-jae',
+    slug: 'sleep-is-a-training-variable',
+    title: 'Sleep is a training variable',
+    excerpt:
+      'We programme sets, reps and rest. Almost nobody programmes the eight hours that decide whether any of it lands.',
+    tags: ['Recovery', 'Mindset'],
+    publishedDaysAgo: 21,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'If I could change one habit in every athlete I work with, it would not be their warm-up or their phone use. It would be a fixed wake time.',
+      },
+      { type: 'heading', text: 'Anchor the morning, not the night' },
+      {
+        type: 'paragraph',
+        text: 'Bedtime drifts; wake time can be held. Pick one you can keep seven days a week and let the evening take care of itself. Within two weeks most people feel sleepy at a consistent hour without trying.',
+      },
+      { type: 'heading', text: 'Three rules that survive real life' },
+      {
+        type: 'list',
+        items: [
+          'Daylight in the first hour, even through a window',
+          'Caffeine ends eight hours before bed',
+          'The bedroom is for sleep — training plans and emails live elsewhere',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'post-open-day',
+    authorId: 'u-admin-1',
+    slug: 'ironworks-spring-open-day',
+    title: 'Ironworks spring open day: bring a friend',
+    excerpt:
+      'One Saturday, every coach on the floor, free movement screens and a look at the new recovery suite. Members bring one guest.',
+    coverImageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1600&q=80',
+    tags: ['Studio news'],
+    publishedDaysAgo: 30,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'The recovery suite is finished, the new rig is in, and we want to show it off. Doors open at nine and the coaches will run screens all morning.',
+      },
+      { type: 'heading', text: 'What is on' },
+      {
+        type: 'list',
+        items: [
+          '09:00 – Doors, coffee and a tour of the new floor',
+          '10:00 – Free 15-minute movement screens (book at the desk)',
+          '12:00 – Panel: what testing tells you that a scale cannot',
+          '13:30 – Recovery suite demos: cold, heat and compression',
+        ],
+      },
+      {
+        type: 'paragraph',
+        text: 'Members may bring one guest. Guests who join on the day get their first month at the member rate.',
+      },
+    ],
+  },
+  {
+    id: 'post-golf-draft',
+    authorId: 'u-coach-devon',
+    slug: 'rotational-power-for-golfers',
+    title: 'Rotational power for golfers: the three lifts that transfer',
+    excerpt: 'Not every exercise in the gym shows up on the course. These three do, and here is the progression we use.',
+    tags: ['Training', 'Golf'],
+    blocks: [
+      {
+        type: 'paragraph',
+        text: 'Draft — collecting the video clips from the last testing block before this goes live.',
+      },
+      { type: 'heading', text: 'Medicine ball rotational throws' },
+      { type: 'paragraph', text: 'TODO: progression and sets.' },
+    ],
+  },
+]
+
+export const POSTS: Post[] = postSeeds.map((seed) => {
+  const author = USERS.find((u) => u.id === seed.authorId)!
+  const publishedAt = seed.publishedDaysAgo === undefined ? null : isoAt(-seed.publishedDaysAgo, 9, 30)
+  const createdAt = isoAt(-(seed.publishedDaysAgo ?? 0) - 1, 16, 15)
+  return {
+    id: id<'Post'>(seed.id),
+    tenantId: DEFAULT_TENANT.id,
+    tenantName: DEFAULT_TENANT.name,
+    tenantSlug: DEFAULT_TENANT.slug,
+    slug: seed.slug,
+    title: seed.title,
+    excerpt: seed.excerpt,
+    coverImageUrl: seed.coverImageUrl ?? null,
+    tags: seed.tags,
+    blocks: seed.blocks,
+    authorId: author.id,
+    authorName: `${author.firstName} ${author.lastName}`,
+    authorRole: author.role,
+    authorTitle: author.title,
+    authorAvatarUrl: author.avatarUrl ?? null,
+    status: publishedAt ? PostStatus.Published : PostStatus.Draft,
+    publishedAt,
+    createdAt,
+    updatedAt: publishedAt ?? createdAt,
+    readingMinutes: readingMinutes(seed.blocks),
+  }
+})
 
 export const DEMO_MEMBER_ID: UserId = demoMemberId
 export const DEMO_TENANT_ID: TenantId = DEFAULT_TENANT.id

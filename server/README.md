@@ -85,6 +85,7 @@ Useful scripts:
 | `npm run build` / `npm start` | compile to `dist/` and run it |
 | `npm run emulators` | Firestore emulator with persisted data |
 | `npm run db:seed [-- --reset]` | demo data (`--reset` empties every collection first) |
+| `npm run db:seed:posts` | only the demo blog posts, into a database that already has studios and people; skips what exists |
 | `npm run db:bootstrap` | production: create the default tenant + an `app_manager` from `BOOTSTRAP_*` |
 | `npm test` | starts the emulator, seeds it, runs the integration suite, stops it |
 
@@ -136,6 +137,20 @@ Add them **before** merging a change that touches `start`: the API exits at
 boot when Firestore is unreachable, and the platform would keep restarting it.
 `https://kedemlife.com/api/health` answering `{"status":"ok"}` means the API is
 up; the site signs in against the same Firestore database Vercel uses.
+
+**Firestore indexes.** The platform deploys code, not `firestore.indexes.json`.
+After a change that adds indexes (the blog's feed queries, for example), run
+once from a laptop with the Firebase CLI signed in to the project:
+
+```bash
+npx firebase deploy --only firestore:indexes --project beyondfit-cc69a
+```
+
+Until the indexes are built the blog still works — the API notices the
+missing index, logs one warning and sorts the feed in memory — so nothing is
+down while they build. The same applies to Vercel. To put the demo articles
+on the live blog, run `npm run db:seed:posts` from a laptop with
+`FIREBASE_SERVICE_ACCOUNT` set; it adds only the posts and skips what exists.
 
 Platform limits that matter here: outbound traffic is HTTP/HTTPS only, so
 external SMTP does not work — leave `SMTP_*` unset (reset links are logged)

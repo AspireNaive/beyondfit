@@ -43,6 +43,8 @@ export const Permission = {
   ViewOrders: 'orders:read',
   ViewPayments: 'payments:read',
   ManageCatalog: 'catalog:write',
+  /** Write articles for the public blog. Coaches and studio staff. */
+  PublishContent: 'content:write',
   ManageTenant: 'tenant:write',
   ManagePlatform: 'platform:write',
 } as const
@@ -56,6 +58,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewAssignedProgress,
     Permission.ManageAppointments,
     Permission.ViewOrders,
+    Permission.PublishContent,
   ],
   [Role.Admin]: [
     Permission.ViewOwnProgress,
@@ -64,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewOrders,
     Permission.ViewPayments,
     Permission.ManageCatalog,
+    Permission.PublishContent,
     Permission.ManageTenant,
   ],
   [Role.AppManager]: [
@@ -73,6 +77,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewOrders,
     Permission.ViewPayments,
     Permission.ManageCatalog,
+    Permission.PublishContent,
     Permission.ManageTenant,
     Permission.ManagePlatform,
   ],

@@ -20,6 +20,7 @@ export const Permission = {
   ViewOrders: 'orders:read',
   ViewPayments: 'payments:read',
   ManageCatalog: 'catalog:write',
+  PublishContent: 'content:write',
   ManageTenant: 'tenant:write',
   ManagePlatform: 'platform:write',
 } as const
@@ -32,6 +33,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewAssignedProgress,
     Permission.ManageAppointments,
     Permission.ViewOrders,
+    Permission.PublishContent,
   ],
   [Role.Admin]: [
     Permission.ViewOwnProgress,
@@ -40,6 +42,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewOrders,
     Permission.ViewPayments,
     Permission.ManageCatalog,
+    Permission.PublishContent,
     Permission.ManageTenant,
   ],
   [Role.AppManager]: [
@@ -49,6 +52,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ViewOrders,
     Permission.ViewPayments,
     Permission.ManageCatalog,
+    Permission.PublishContent,
     Permission.ManageTenant,
     Permission.ManagePlatform,
   ],
@@ -85,6 +89,12 @@ export type TenantPlan = (typeof TENANT_PLANS)[number]
 
 export const USER_STATUSES = ['active', 'invited', 'suspended'] as const
 export type UserStatus = (typeof USER_STATUSES)[number]
+
+export const POST_STATUSES = ['draft', 'published'] as const
+export type PostStatus = (typeof POST_STATUSES)[number]
+
+export const POST_BLOCK_TYPES = ['heading', 'paragraph', 'image', 'video', 'quote', 'list'] as const
+export type PostBlockType = (typeof POST_BLOCK_TYPES)[number]
 
 // ---- Response shapes (exactly what the front end's ports expect) ----------
 
@@ -274,3 +284,39 @@ export type Subscription = {
   startedAt: string
   renewsAt: string
 }
+
+// ---- Content (blog) --------------------------------------------------------
+
+export type PostBlock =
+  | { type: 'heading'; text: string }
+  | { type: 'paragraph'; text: string }
+  | { type: 'image'; url: string; alt: string; caption?: string }
+  | { type: 'video'; url: string; caption?: string }
+  | { type: 'quote'; text: string; attribution?: string }
+  | { type: 'list'; items: string[] }
+
+export type Post = {
+  id: string
+  tenantId: string
+  tenantName: string
+  tenantSlug: string
+  slug: string
+  title: string
+  excerpt: string
+  coverImageUrl: string | null
+  tags: string[]
+  blocks: PostBlock[]
+  authorId: string
+  authorName: string
+  authorRole: Role
+  authorTitle?: string
+  authorAvatarUrl: string | null
+  status: PostStatus
+  publishedAt: string | null
+  createdAt: string
+  updatedAt: string
+  readingMinutes: number
+}
+
+/** Paged envelope for list endpoints. */
+export type Page<T> = { items: T[]; total: number; page: number; pageSize: number }

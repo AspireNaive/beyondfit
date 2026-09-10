@@ -21,7 +21,8 @@
     "dev:api": "npm --prefix server run dev",
     "build:api": "npm run build -w server",
     "test:api": "npm --prefix server test",
-    "db:seed": "npm --prefix server run db:seed -- --reset"
+    "db:seed": "npm --prefix server run db:seed -- --reset",
+    "db:seed:posts": "npm --prefix server run db:seed:posts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -19,6 +19,7 @@ import {
   GOALS,
   ORDERS,
   PAYMENTS,
+  POSTS,
   PRODUCTS,
   PROVIDERS,
   SUBSCRIPTIONS,
@@ -26,11 +27,13 @@ import {
   USERS,
 } from '@/infrastructure/mock/seed'
 import { hashPassword } from '../src/auth/password.js'
+import type { PostBlock } from '../src/domain.js'
 import { col, db, deleteEverything, Timestamp } from '../src/db/firestore.js'
 import { HttpError } from '../src/lib/errors.js'
 import { newId } from '../src/lib/ids.js'
 import { insertAppointment } from '../src/modules/appointments/repository.js'
 import { insertProduct } from '../src/modules/catalog/repository.js'
+import { insertPost } from '../src/modules/content/repository.js'
 import { insertOrder, insertSubscription, paymentDoc } from '../src/modules/orders/repository.js'
 import { activityId, metricDoc } from '../src/modules/progress/repository.js'
 import { insertProvider, setHours } from '../src/modules/providers/repository.js'
@@ -161,6 +164,17 @@ export async function seed(options: { reset?: boolean } = {}): Promise<void> {
     })
   }
   log(`subscriptions: ${SUBSCRIPTIONS.length}`)
+
+  for (const p of POSTS) {
+    await insertPost({
+      id: p.id, tenantId: p.tenantId, tenantName: p.tenantName, tenantSlug: p.tenantSlug, slug: p.slug, title: p.title,
+      excerpt: p.excerpt, coverImageUrl: p.coverImageUrl ?? null, tags: [...p.tags], blocks: structuredClone(p.blocks) as PostBlock[],
+      authorId: p.authorId, authorName: p.authorName, authorRole: p.authorRole, authorTitle: p.authorTitle ?? null,
+      authorAvatarUrl: p.authorAvatarUrl ?? null, status: p.status, publishedAt: p.publishedAt ? new Date(p.publishedAt) : null,
+      createdAt: new Date(p.createdAt),
+    })
+  }
+  log(`posts: ${POSTS.length}`)
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]

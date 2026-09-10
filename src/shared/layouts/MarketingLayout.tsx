@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
   { label: 'Specialists', to: '/specialists' },
   { label: 'Shop', to: '/shop' },
   { label: 'Results', to: '/results' },
+  { label: 'Blog', to: '/blog' },
   { label: 'About', to: '/about' },
   { label: 'Contact', to: '/contact' },
 ]
@@ -230,6 +231,7 @@ const FOOTER_LINKS: { title: string; links: { label: string; to: string }[] }[] 
     title: 'Company',
     links: [
       { label: 'About', to: '/about' },
+      { label: 'Blog', to: '/blog' },
       { label: 'Results', to: '/results' },
       { label: 'Contact', to: '/contact' },
       { label: 'For studios', to: '/platform' },
