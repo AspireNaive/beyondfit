@@ -91,13 +91,20 @@ export function readingMinutes(blocks: readonly PostBlock[]): number {
 
 /**
  * Firestore refuses an ordered, filtered query until its composite index
- * exists (FAILED_PRECONDITION, gRPC code 9). GoDaddy and Vercel deploy the
- * code but not `firestore.indexes.json`, so rather than 500 the feed until
- * someone runs `firebase deploy --only firestore:indexes`, fetch the filtered
- * set unordered and sort here. Slower on a big blog, correct on every host.
+ * exists. GoDaddy and Vercel deploy the code but not `firestore.indexes.json`,
+ * so rather than 500 the feed until someone runs
+ * `firebase deploy --only firestore:indexes`, fetch the filtered set unordered
+ * and sort here. Slower on a big blog, correct on every host.
+ *
+ * The error's numeric code depends on the transport: gRPC reports
+ * FAILED_PRECONDITION (9), the REST transport GoDaddy uses maps the HTTP 400
+ * to INVALID_ARGUMENT (3). The message is the same on both, so match on it.
  */
-const isMissingIndex = (err: unknown) =>
-  typeof err === 'object' && err !== null && (err as { code?: number }).code === 9
+const isMissingIndex = (err: unknown) => {
+  if (typeof err !== 'object' || err === null) return false
+  const { code, message } = err as { code?: number; message?: string }
+  return code === 9 || /requires an index/i.test(message ?? '')
+}
 
 let warnedMissingIndex = false
 
