@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Activity, ArrowLeft, CalendarDays, Mail, MapPin, Phone, Star } from 'lucide-react'
+import { Activity, ArrowLeft, CalendarDays, ClipboardList, Mail, MapPin, Phone, Star, Utensils } from 'lucide-react'
 import { ROLE_LABELS, Role, fullName } from '@/domain/identity/model'
 import { isUpcoming } from '@/domain/scheduling/model'
 import { Avatar } from '@/shared/ui/Avatar'
@@ -12,7 +12,8 @@ import { ErrorState, Skeleton } from '@/shared/ui/Feedback'
 import { useCurrentUser } from '@/features/auth/store'
 import { AppointmentCard } from '@/features/booking/AppointmentCard'
 import { useAppointments } from '@/features/booking/hooks'
-import { useProfile } from './hooks'
+import { Select } from '@/shared/ui/Field'
+import { useMappedProfiles, useProfile, useUpdatePerson } from './hooks'
 import type { UserId } from '@/domain/shared/types'
 
 export default function ProfilePage() {
@@ -27,6 +28,16 @@ export default function ProfilePage() {
   const profile = isSelf ? viewer : fetched
 
   const { data: appointments } = useAppointments(viewer)
+
+  // Admins map members to coaches from here.
+  const canManage = viewer?.role === Role.Admin || viewer?.role === Role.AppManager
+  const people = useMappedProfiles(canManage ? viewer : null)
+  const coaches = useMemo(
+    () => (people.data ?? []).filter((p) => p.role === Role.Coach && p.tenantId === (fetched?.tenantId ?? viewer?.tenantId)),
+    [people.data, fetched?.tenantId, viewer?.tenantId],
+  )
+  const coachById = useMemo(() => new Map((people.data ?? []).map((p) => [p.id, p])), [people.data])
+  const updatePerson = useUpdatePerson(viewer)
 
   /** Sessions between the viewer and this person, upcoming first. */
   const shared = useMemo(() => {
@@ -57,11 +68,9 @@ export default function ProfilePage() {
   }
 
   const isCoach = profile.role === Role.Coach
-  const canSeeProgress =
-    isSelf ||
-    viewer?.role === Role.Admin ||
-    viewer?.role === Role.AppManager ||
-    (viewer?.role === Role.Coach && profile.assignedCoachId === viewer.id)
+  // Coaches see every member in their studio; the assigned coach is flagged, not gated.
+  const canSeeProgress = isSelf || viewer?.role !== Role.Member
+  const isMyClient = viewer?.role === Role.Coach && profile.assignedCoachId === viewer.id
 
   return (
     <>
@@ -83,6 +92,7 @@ export default function ProfilePage() {
             <h1 className="text-3xl">{fullName(profile)}</h1>
             <Badge tone={isCoach ? 'volt' : 'neutral'}>{ROLE_LABELS[profile.role]}</Badge>
             {isSelf && <Badge tone="info">This is you</Badge>}
+            {isMyClient && <Badge tone="volt">Your client</Badge>}
             {profile.status !== 'active' && <Badge tone="warn">{profile.status}</Badge>}
           </div>
 
@@ -145,14 +155,26 @@ export default function ProfilePage() {
             </ButtonLink>
           )}
           {canSeeProgress && profile.role === Role.Member && (
-            <ButtonLink
-              to={isSelf ? '/app/progress' : `/app/progress/${profile.id}`}
-              size="md"
-              variant={isSelf ? 'primary' : 'outline'}
-            >
-              <Activity className="size-4" />
-              View progress
-            </ButtonLink>
+            <>
+              <ButtonLink
+                to={isSelf ? '/app/progress' : `/app/progress/${profile.id}`}
+                size="md"
+                variant={isSelf ? 'primary' : 'outline'}
+              >
+                <Activity className="size-4" />
+                View progress
+              </ButtonLink>
+              <ButtonLink to={isSelf ? '/app/nutrition' : `/app/nutrition/${profile.id}`} size="md" variant="outline">
+                <Utensils className="size-4" />
+                Food diary
+              </ButtonLink>
+              {!isSelf && viewer?.role !== Role.Member && (
+                <ButtonLink to={`/app/nutrition/${profile.id}/plan`} size="md" variant="outline">
+                  <ClipboardList className="size-4" />
+                  Diet plan
+                </ButtonLink>
+              )}
+            </>
           )}
         </div>
       </header>
@@ -220,21 +242,47 @@ export default function ProfilePage() {
             <Card>
               <CardBody>
                 <CardTitle>Coaching</CardTitle>
-                <p className="mt-3 text-sm text-chalk-dim">
-                  {profile.assignedCoachId ? (
-                    <>
-                      Assigned coach:{' '}
-                      <Link
-                        to={`/app/people/${profile.assignedCoachId}`}
-                        className="text-volt-400 underline underline-offset-4"
-                      >
-                        view profile
-                      </Link>
-                    </>
-                  ) : (
-                    'No coach assigned yet.'
-                  )}
-                </p>
+                {canManage && !isSelf ? (
+                  <div className="mt-3">
+                    <Select
+                      label="Assigned coach"
+                      value={profile.assignedCoachId ?? ''}
+                      disabled={updatePerson.isPending || people.isPending}
+                      onChange={(e) =>
+                        updatePerson.mutate({
+                          userId: profile.id,
+                          patch: { assignedCoachId: e.target.value ? (e.target.value as UserId) : null },
+                        })
+                      }
+                      hint={updatePerson.isPending ? 'Saving…' : updatePerson.isSuccess ? 'Saved. The coach can see this member straight away.' : 'Who is responsible for this member.'}
+                      error={updatePerson.isError ? (updatePerson.error as Error).message : undefined}
+                    >
+                      <option value="">No coach</option>
+                      {coaches.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {fullName(c)}
+                          {c.title ? ` — ${c.title}` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-chalk-dim">
+                    {profile.assignedCoachId ? (
+                      <>
+                        Assigned coach:{' '}
+                        <Link
+                          to={`/app/people/${profile.assignedCoachId}`}
+                          className="text-volt-400 underline underline-offset-4"
+                        >
+                          {coachById.get(profile.assignedCoachId) ? fullName(coachById.get(profile.assignedCoachId)!) : 'view profile'}
+                        </Link>
+                      </>
+                    ) : (
+                      'No coach assigned yet.'
+                    )}
+                  </p>
+                )}
                 {profile.title && (
                   <p className="mt-4 rounded-lg border border-ink-700 bg-ink-900/60 p-3 text-sm text-chalk-dim">
                     <span className="font-semibold text-chalk">Current goal: </span>

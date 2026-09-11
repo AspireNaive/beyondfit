@@ -45,6 +45,10 @@ const schema = z.object({
 
   PAYMENT_PROVIDER: z.enum(['manual']).default('manual'),
 
+  /** Claude, for reading calories off food photos. Unset = photo analysis off, manual logging still works. */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
+
   BOOTSTRAP_TENANT_NAME: z.string().default('Kedem Life'),
   BOOTSTRAP_TENANT_SLUG: z.string().default('kedem'),
   BOOTSTRAP_ADMIN_EMAIL: z.string().optional(),
@@ -110,6 +114,12 @@ export const config = {
       }
     : null,
   paymentProvider: env.PAYMENT_PROVIDER,
+  ai: {
+    apiKey: env.ANTHROPIC_API_KEY,
+    model: env.ANTHROPIC_MODEL,
+    /** Photo analysis is available only when a key is configured. */
+    enabled: Boolean(env.ANTHROPIC_API_KEY),
+  },
   bootstrap: {
     tenantName: env.BOOTSTRAP_TENANT_NAME,
     tenantSlug: env.BOOTSTRAP_TENANT_SLUG,

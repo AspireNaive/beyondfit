@@ -18,6 +18,7 @@ import { directoryRouter } from './modules/directory/routes.js'
 import { contactRouter, newsletterRouter } from './modules/marketing/routes.js'
 import { ordersRouter, paymentsRouter, subscriptionsRouter } from './modules/orders/routes.js'
 import { membersRouter } from './modules/progress/routes.js'
+import { memberNutritionRouter, nutritionRouter } from './modules/nutrition/routes.js'
 import { providersRouter } from './modules/providers/routes.js'
 import { tenantRouter, tenantsRouter } from './modules/tenants/routes.js'
 import { openApiDocument } from './openapi.js'
@@ -72,7 +73,11 @@ export function createApp(): Express {
       }),
     )
   }
-  app.use(express.json({ limit: '256kb' }))
+  // Food-photo uploads (base64 JPEG, downsized by the client) need more room
+  // than any other body; everything else keeps the tight limit.
+  const smallJson = express.json({ limit: '256kb' })
+  const photoJson = express.json({ limit: '8mb' })
+  app.use((req, res, next) => (/^\/api\/members\/[^/]+\/food(\/|$)/.test(req.path) ? photoJson : smallJson)(req, res, next))
 
   // ---- /api ---------------------------------------------------------------
   const api = Router()
@@ -89,7 +94,9 @@ export function createApp(): Express {
   api.use('/directory', directoryRouter)
   api.use('/providers', providersRouter)
   api.use('/appointments', appointmentsRouter)
+  api.use('/members', memberNutritionRouter)
   api.use('/members', membersRouter)
+  api.use('/nutrition', nutritionRouter)
   api.use('/products', productsRouter)
   api.use('/posts', postsRouter)
   api.use('/orders', ordersRouter)

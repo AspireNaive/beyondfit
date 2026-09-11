@@ -131,6 +131,7 @@ FIREBASE_PROJECT_ID=beyondfit-cc69a
 FIREBASE_SERVICE_ACCOUNT=<base64 of the service-account key: base64 -i key.json | tr -d '\n'>
 JWT_SECRET=<48 random bytes>
 APP_URL=https://kedemlife.com
+ANTHROPIC_API_KEY=<optional: enables calorie estimates from food photos>
 ```
 
 Add them **before** merging a change that touches `start`: the API exits at

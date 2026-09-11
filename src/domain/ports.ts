@@ -1,11 +1,23 @@
 import type {
   AuthSession,
   LoginRequest,
+  NewPersonInput,
+  PersonPatch,
   RegisterRequest,
   Role,
   Tenant,
   UserProfile,
 } from '@/domain/identity/model'
+import type {
+  DailyTotals,
+  DietPlan,
+  DietPlanInput,
+  FoodAnalysis,
+  FoodEntry,
+  FoodEntryInput,
+  FoodEntryPatch,
+  NutritionCapabilities,
+} from '@/domain/nutrition/model'
 import type {
   Appointment,
   AvailabilitySlot,
@@ -28,7 +40,7 @@ import type {
   Subscription,
 } from '@/domain/commerce/model'
 import type { Post, PostFilter, PostInput, PostStatus } from '@/domain/content/model'
-import type { IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
+import type { FoodEntryId, IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
 
 /**
  * Ports. The UI depends only on these interfaces; `infrastructure/` supplies
@@ -52,6 +64,30 @@ export interface DirectoryPort {
   listMappedProfiles(viewer: UserProfile): Promise<readonly UserProfile[]>
   getProfile(id: UserId): Promise<UserProfile | null>
   listByRole(role: Role): Promise<readonly UserProfile[]>
+  /** Studio management (admin, app manager): add a member or coach… */
+  createPerson(input: NewPersonInput): Promise<{ user: UserProfile; temporaryPassword: string | null }>
+  /** …and map a member to a coach or change someone's status. */
+  updatePerson(userId: UserId, patch: PersonPatch): Promise<UserProfile>
+}
+
+/**
+ * Food diary and diet plans. Reads follow the progress rules (the member,
+ * coaches and admin of their studio, platform staff). Members log their own
+ * meals; diet plans are written by coaches and staff.
+ */
+export interface NutritionPort {
+  capabilities(): Promise<NutritionCapabilities>
+  /** Estimate calories and macros from a photo; nothing is saved. */
+  analyzeFoodPhoto(memberId: UserId, photoDataUrl: string, hint?: string): Promise<FoodAnalysis>
+  listFoodEntries(memberId: UserId, range: { from: IsoDate; to: IsoDate }): Promise<readonly FoodEntry[]>
+  dailyTotals(memberId: UserId, range: { from: IsoDate; to: IsoDate }): Promise<readonly DailyTotals[]>
+  logFood(memberId: UserId, input: FoodEntryInput): Promise<FoodEntry>
+  updateFood(memberId: UserId, entryId: FoodEntryId, patch: FoodEntryPatch): Promise<FoodEntry>
+  deleteFood(memberId: UserId, entryId: FoodEntryId): Promise<void>
+  getFoodPhoto(memberId: UserId, entryId: FoodEntryId): Promise<string | null>
+  getDietPlan(memberId: UserId): Promise<DietPlan | null>
+  listDietPlans(memberId: UserId): Promise<readonly DietPlan[]>
+  saveDietPlan(memberId: UserId, input: DietPlanInput, author: UserProfile): Promise<DietPlan>
 }
 
 export interface SchedulingPort {
@@ -144,4 +180,5 @@ export type Container = {
   tenants: TenantPort
   marketing: MarketingPort
   content: ContentPort
+  nutrition: NutritionPort
 }

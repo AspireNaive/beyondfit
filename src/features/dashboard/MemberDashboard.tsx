@@ -5,6 +5,7 @@ import {
   Activity,
   ArrowRight,
   CalendarPlus,
+  Camera,
   Flame,
   Footprints,
   Package,
@@ -30,6 +31,7 @@ import { useProfile } from '@/features/profiles/hooks'
 import type { UserId } from '@/domain/shared/types'
 
 const QUICK_ACTIONS = [
+  { to: '/app/nutrition', label: 'Log a meal', icon: Camera },
   { to: '/app/specialists', label: 'Book a session', icon: CalendarPlus },
   { to: '/app/progress', label: 'Log my numbers', icon: Activity },
   { to: '/shop', label: 'Browse the shop', icon: Package },

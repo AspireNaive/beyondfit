@@ -8,6 +8,7 @@ import {
 } from '@/domain/scheduling/model'
 import type { ActivityEntry, BodyMetricEntry, MemberGoal } from '@/domain/progress/model'
 import { PostStatus, readingMinutes, type Post, type PostBlock } from '@/domain/content/model'
+import { sumMacros, type DietPlan, type FoodEntry, type FoodItem, type MealType } from '@/domain/nutrition/model'
 import {
   OrderStatus,
   PaymentMethod,
@@ -1020,6 +1021,106 @@ export const POSTS: Post[] = postSeeds.map((seed) => {
     readingMinutes: readingMinutes(seed.blocks),
   }
 })
+
+// ---------------------------------------------------------------------------
+// Food diary + diet plan (demo member only)
+// ---------------------------------------------------------------------------
+
+type SeedMeal = { type: MealType; hour: number; title: string; items: FoodItem[]; notes?: string; photo?: boolean }
+
+const food = (name: string, portion: string, calories: number, proteinG: number, carbsG: number, fatG: number): FoodItem => ({
+  name, portion, calories, proteinG, carbsG, fatG,
+})
+
+const MEAL_LIBRARY: Record<MealType, SeedMeal[]> = {
+  breakfast: [
+    { type: 'breakfast', hour: 7, title: 'Greek yoghurt bowl', items: [food('Greek yoghurt (0%)', '200 g', 120, 20, 8, 0), food('Blueberries', '80 g', 45, 1, 11, 0), food('Granola', '40 g', 180, 4, 26, 7)], photo: true },
+    { type: 'breakfast', hour: 7, title: 'Eggs and toast', items: [food('Scrambled eggs', '3 eggs', 220, 19, 2, 15), food('Wholegrain toast', '2 slices', 160, 7, 28, 2), food('Butter', '1 tsp', 35, 0, 0, 4)] },
+    { type: 'breakfast', hour: 8, title: 'Oats with banana', items: [food('Porridge oats', '60 g', 230, 8, 40, 4), food('Semi-skimmed milk', '250 ml', 120, 9, 12, 4), food('Banana', '1 medium', 105, 1, 27, 0)] },
+  ],
+  lunch: [
+    { type: 'lunch', hour: 12, title: 'Chicken and rice', items: [food('Grilled chicken breast', '150 g', 250, 46, 0, 5), food('Basmati rice', '180 g cooked', 235, 5, 50, 1), food('Broccoli', '100 g', 35, 3, 7, 0), food('Olive oil', '1 tbsp', 120, 0, 0, 14)], photo: true },
+    { type: 'lunch', hour: 13, title: 'Tuna salad wrap', items: [food('Tuna in spring water', '1 can', 110, 25, 0, 1), food('Tortilla wrap', '1 large', 210, 6, 36, 5), food('Mixed salad', '1 cup', 20, 1, 4, 0), food('Light mayo', '1 tbsp', 50, 0, 1, 5)] },
+    { type: 'lunch', hour: 12, title: 'Lentil soup and bread', items: [food('Lentil soup', '400 ml', 280, 16, 42, 5), food('Sourdough', '1 slice', 120, 4, 23, 1)] },
+  ],
+  dinner: [
+    { type: 'dinner', hour: 19, title: 'Salmon, potatoes and greens', items: [food('Baked salmon', '160 g', 330, 34, 0, 21), food('New potatoes', '200 g', 150, 4, 34, 0), food('Green beans', '100 g', 30, 2, 7, 0)], photo: true },
+    { type: 'dinner', hour: 19, title: 'Beef stir-fry', items: [food('Lean beef strips', '150 g', 270, 36, 0, 13), food('Stir-fry vegetables', '200 g', 70, 4, 13, 1), food('Egg noodles', '150 g cooked', 210, 7, 40, 2), food('Soy and sesame sauce', '2 tbsp', 60, 2, 6, 3)] },
+    { type: 'dinner', hour: 20, title: 'Chickpea curry', items: [food('Chickpea and spinach curry', '350 g', 380, 14, 48, 14), food('Brown rice', '150 g cooked', 165, 4, 35, 1)] },
+  ],
+  snack: [
+    { type: 'snack', hour: 16, title: 'Protein shake', items: [food('Whey protein', '1 scoop', 120, 24, 3, 1), food('Semi-skimmed milk', '300 ml', 140, 10, 14, 5)] },
+    { type: 'snack', hour: 15, title: 'Apple and peanut butter', items: [food('Apple', '1 medium', 95, 0, 25, 0), food('Peanut butter', '1 tbsp', 95, 4, 3, 8)] },
+    { type: 'snack', hour: 21, title: 'Dark chocolate', items: [food('Dark chocolate (70%)', '20 g', 120, 2, 9, 9)] },
+  ],
+}
+
+/** A tiny placeholder thumbnail (1×1 JPEG-ish pixel as PNG) so photo entries render a frame in demos. */
+const DEMO_THUMB =
+  'data:image/svg+xml;base64,' +
+  btoa(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b4d61"/><stop offset="1" stop-color="#161f2a"/></linearGradient></defs><rect width="240" height="180" fill="url(#g)"/><circle cx="120" cy="92" r="52" fill="#0b1017" stroke="#d0fb54" stroke-width="3"/><circle cx="120" cy="92" r="30" fill="#93c516" opacity=".8"/></svg>`,
+  )
+
+export const FOOD_ENTRIES: FoodEntry[] = (() => {
+  const rows: FoodEntry[] = []
+  for (let day = 0; day < 10; day++) {
+    const types: MealType[] = day % 3 === 0 ? ['breakfast', 'lunch', 'dinner', 'snack'] : ['breakfast', 'lunch', 'dinner']
+    for (const type of types) {
+      const options = MEAL_LIBRARY[type]
+      const meal = options[(day + options.length) % options.length]!
+      const loggedAt = isoAt(-day, meal.hour, intBetween(0, 45))
+      rows.push({
+        id: id<'FoodEntry'>(`f-${day}-${type}`),
+        tenantId: DEFAULT_TENANT.id,
+        memberId: demoMemberId,
+        date: isoDate(-day),
+        mealType: type,
+        loggedAt,
+        title: meal.title,
+        items: meal.items,
+        totals: sumMacros(meal.items),
+        notes: meal.notes ?? null,
+        source: meal.photo ? 'photo' : 'manual',
+        thumbDataUrl: meal.photo ? DEMO_THUMB : null,
+        hasPhoto: false,
+        createdAt: loggedAt,
+        updatedAt: loggedAt,
+      })
+    }
+  }
+  return rows
+})()
+
+export const DIET_PLANS: DietPlan[] = [
+  {
+    id: id<'DietPlan'>('dp-member-1'),
+    tenantId: DEFAULT_TENANT.id,
+    memberId: demoMemberId,
+    authorId: id<'User'>('u-coach-priya'),
+    authorName: 'Priya Raghunathan',
+    authorRole: Role.Coach,
+    title: 'Lean-out phase: 12 weeks',
+    summary:
+      'A modest deficit with protein held high so the strength work keeps its muscle. Three meals and one snack, food you can buy anywhere. Weigh-ins Monday mornings; we adjust every two weeks.',
+    targets: { calories: 2200, proteinG: 170, carbsG: 210, fatG: 70 },
+    meals: [
+      { name: 'Breakfast', time: '07:00', description: 'Greek yoghurt or eggs with a slice of wholegrain toast and fruit. Aim for 30 g protein.', calories: 450 },
+      { name: 'Lunch', time: '12:30', description: 'A palm of lean protein (chicken, fish, tofu), a fist of rice or potatoes, two fists of vegetables.', calories: 650 },
+      { name: 'Snack', time: '16:00', description: 'Protein shake with milk, or fruit with a tablespoon of nut butter — before training on gym days.', calories: 250 },
+      { name: 'Dinner', time: '19:30', description: 'Same shape as lunch. Swap the starch for extra vegetables on rest days.', calories: 750 },
+    ],
+    guidelines: [
+      'Protein at every meal — it is what protects muscle in a deficit',
+      'Two to three litres of water a day; more on training days',
+      'Alcohol counts: keep it to the weekend and log it honestly',
+      'Photo every meal — an estimate you can correct beats no record at all',
+    ],
+    status: 'active',
+    createdAt: isoAt(-21, 10),
+    updatedAt: isoAt(-21, 10),
+  },
+]
 
 export const DEMO_MEMBER_ID: UserId = demoMemberId
 export const DEMO_TENANT_ID: TenantId = DEFAULT_TENANT.id

@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Users } from 'lucide-react'
+import { Search, UserPlus, Users } from 'lucide-react'
 import { ROLE_LABELS, Role, fullName, type UserProfile } from '@/domain/identity/model'
 import { PageHeading } from '@/shared/ui/Card'
 import { Avatar } from '@/shared/ui/Avatar'
 import { Badge } from '@/shared/ui/Badge'
 import { EmptyState, ErrorState, SkeletonList } from '@/shared/ui/Feedback'
 import { Tabs } from '@/shared/ui/Tabs'
+import { Button } from '@/shared/ui/Button'
 import { useCurrentUser } from '@/features/auth/store'
+import { AddPersonDialog } from './AddPersonDialog'
 import { useMappedProfiles } from './hooks'
 import { cn } from '@/shared/lib/cn'
 
@@ -18,7 +20,7 @@ const ROLE_TONE: Record<Role, 'volt' | 'info' | 'ember' | 'neutral'> = {
   [Role.AppManager]: 'ember',
 }
 
-function ProfileCard({ profile, isSelf }: { profile: UserProfile; isSelf: boolean }) {
+function ProfileCard({ profile, isSelf, isClient }: { profile: UserProfile; isSelf: boolean; isClient?: boolean }) {
   return (
     <Link
       to={isSelf ? '/app/profile' : `/app/people/${profile.id}`}
@@ -33,6 +35,7 @@ function ProfileCard({ profile, isSelf }: { profile: UserProfile; isSelf: boolea
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-lg leading-tight">{fullName(profile)}</h3>
             {isSelf && <Badge tone="volt">You</Badge>}
+            {isClient && <Badge tone="volt">Your client</Badge>}
           </div>
           <p className="mt-0.5 truncate text-sm text-chalk-dim">{profile.title ?? '—'}</p>
           <Badge tone={ROLE_TONE[profile.role]} className="mt-2">
@@ -74,9 +77,15 @@ function ProfileCard({ profile, isSelf }: { profile: UserProfile; isSelf: boolea
 export default function DirectoryPage() {
   const viewer = useCurrentUser()
   const [query, setQuery] = useState('')
-  const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
+  const [roleFilter, setRoleFilter] = useState<Role | 'all' | 'mine'>('all')
+  const [adding, setAdding] = useState(false)
 
   const { data, isPending, isError, refetch } = useMappedProfiles(viewer)
+  const canManage = viewer?.role === Role.Admin || viewer?.role === Role.AppManager
+  const myClients = useMemo(
+    () => (viewer?.role === Role.Coach ? (data ?? []).filter((p) => p.assignedCoachId === viewer.id) : []),
+    [data, viewer],
+  )
 
   const counts = useMemo(() => {
     const all = data ?? []
@@ -91,7 +100,8 @@ export default function DirectoryPage() {
 
   const visible = useMemo(() => {
     let rows = data ?? []
-    if (roleFilter !== 'all') rows = rows.filter((p) => p.role === roleFilter)
+    if (roleFilter === 'mine') rows = rows.filter((p) => p.assignedCoachId === viewer?.id)
+    else if (roleFilter !== 'all') rows = rows.filter((p) => p.role === roleFilter)
 
     const q = query.trim().toLowerCase()
     if (q) {
@@ -114,6 +124,7 @@ export default function DirectoryPage() {
 
   const tabs = [
     { id: 'all' as const, label: 'Everyone', count: counts.all },
+    ...(viewer?.role === Role.Coach ? [{ id: 'mine' as const, label: 'My clients', count: myClients.length }] : []),
     ...(
       [Role.Member, Role.Coach, Role.Admin, Role.AppManager] as const
     )
@@ -125,12 +136,25 @@ export default function DirectoryPage() {
     viewer?.role === Role.Member
       ? 'Your coach and every specialist you can book with — plus your own profile.'
       : viewer?.role === Role.Coach
-        ? 'The members assigned to you, your fellow coaches, and your own profile.'
-        : 'Everyone in your studio.'
+        ? 'Every member in your studio — your own clients are flagged — plus your fellow coaches.'
+        : 'Everyone in your studio. Add members and coaches, and map members to coaches from their profile.'
 
   return (
     <>
-      <PageHeading title="People" subtitle={subtitle} />
+      <PageHeading
+        title="People"
+        subtitle={subtitle}
+        actions={
+          canManage ? (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              <UserPlus className="size-4" /> Add a person
+            </Button>
+          ) : undefined
+        }
+      />
+      {canManage && (
+        <AddPersonDialog open={adding} onClose={() => setAdding(false)} coaches={(data ?? []).filter((p) => p.role === Role.Coach)} />
+      )}
 
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={roleFilter} onChange={setRoleFilter} items={tabs} className="max-w-full" />
@@ -161,7 +185,12 @@ export default function DirectoryPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((profile) => (
-            <ProfileCard key={profile.id} profile={profile} isSelf={profile.id === viewer?.id} />
+            <ProfileCard
+              key={profile.id}
+              profile={profile}
+              isSelf={profile.id === viewer?.id}
+              isClient={viewer?.role === Role.Coach && profile.assignedCoachId === viewer.id}
+            />
           ))}
         </div>
       )}

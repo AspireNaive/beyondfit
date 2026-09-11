@@ -60,6 +60,10 @@ export const col = {
   passwordResetTokens: 'passwordResetTokens',
   contactMessages: 'contactMessages',
   newsletterSubscribers: 'newsletterSubscribers',
+  foodEntries: 'foodEntries',
+  /** entryId → { dataUrl }; kept apart so diary lists stay light. */
+  foodPhotos: 'foodPhotos',
+  dietPlans: 'dietPlans',
   posts: 'posts',
   /** slug → { postId }; one public link per article. */
   postSlugs: 'postSlugs',
@@ -97,6 +101,17 @@ export async function deleteEverything(): Promise<void> {
     return
   }
   for (const name of ALL_COLLECTIONS) await db.recursiveDelete(db.collection(name))
+}
+
+/**
+ * Firestore refuses a filtered+ordered query until its composite index exists.
+ * gRPC reports FAILED_PRECONDITION (9); the REST transport GoDaddy uses reports
+ * INVALID_ARGUMENT (3) with the same message — so match on the message too.
+ */
+export const isMissingIndexError = (err: unknown) => {
+  if (typeof err !== 'object' || err === null) return false
+  const { code, message } = err as { code?: number; message?: string }
+  return code === 9 || /requires an index/i.test(message ?? '')
 }
 
 /** Boot-time reachability check; cheap and works against the emulator too. */

@@ -10,6 +10,8 @@
     { "collectionGroup": "orders", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "instructorIds", "arrayConfig": "CONTAINS" }, { "fieldPath": "placedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "customerId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tenantId", "order": "ASCENDING" }, { "fieldPath": "processedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "foodEntries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "memberId", "order": "ASCENDING" }, { "fieldPath": "date", "order": "DESCENDING" }, { "fieldPath": "loggedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "dietPlans", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "memberId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" } ] },
     { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "tenantSlug", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "tagsLower", "arrayConfig": "CONTAINS" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" } ] },

@@ -48,4 +48,9 @@ export const queryKeys = {
     ['posts', filter] as const,
   post: (slug: string) => ['post', slug] as const,
   managedPosts: (viewerId: string) => ['managed-posts', viewerId] as const,
+  nutritionCapabilities: () => ['nutrition-capabilities'] as const,
+  foodEntries: (memberId: string, from: string, to: string) => ['food', memberId, from, to] as const,
+  foodTotals: (memberId: string, from: string, to: string) => ['food-totals', memberId, from, to] as const,
+  dietPlan: (memberId: string) => ['diet-plan', memberId] as const,
+  dietPlans: (memberId: string) => ['diet-plans', memberId] as const,
 } as const

@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   Stethoscope,
   Users,
+  Utensils,
   X,
 } from 'lucide-react'
 import { Permission, Role, can, fullName } from '@/domain/identity/model'
@@ -47,6 +48,7 @@ const NAV: NavEntry[] = [
     roles: [Role.Admin, Role.AppManager],
   },
   { to: '/app/progress', label: 'Progress', icon: Activity, roles: [Role.Member] },
+  { to: '/app/nutrition', label: 'Food diary', icon: Utensils, roles: [Role.Member] },
   { to: '/app/schedule', label: 'Appointments', icon: CalendarDays },
   { to: '/app/specialists', label: 'Find a specialist', icon: Stethoscope, roles: [Role.Member] },
   { to: '/app/people', label: 'People', icon: Users },

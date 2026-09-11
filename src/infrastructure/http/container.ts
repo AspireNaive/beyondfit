@@ -1,4 +1,23 @@
-import type { Role, AuthSession, LoginRequest, RegisterRequest, Tenant, UserProfile } from '@/domain/identity/model'
+import type {
+  Role,
+  AuthSession,
+  LoginRequest,
+  NewPersonInput,
+  PersonPatch,
+  RegisterRequest,
+  Tenant,
+  UserProfile,
+} from '@/domain/identity/model'
+import type {
+  DailyTotals,
+  DietPlan,
+  DietPlanInput,
+  FoodAnalysis,
+  FoodEntry,
+  FoodEntryInput,
+  FoodEntryPatch,
+  NutritionCapabilities,
+} from '@/domain/nutrition/model'
 import type {
   Appointment,
   AvailabilitySlot,
@@ -18,8 +37,8 @@ import type {
 } from '@/domain/commerce/model'
 import type { Post, PostFilter, PostInput, PostStatus } from '@/domain/content/model'
 import type { ContactMessage, Container } from '@/domain/ports'
-import type { IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
-import { ApiClient, qs } from './api-client'
+import type { FoodEntryId, IsoDate, OrderId, Page, PostId, UserId } from '@/domain/shared/types'
+import { ApiClient, ApiError, qs } from './api-client'
 
 /**
  * The HTTP adapter for the Node API in ./server.
@@ -111,6 +130,11 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL
         api.get<readonly UserProfile[]>('/directory/mapped'),
       getProfile: (userId: UserId) => api.get<UserProfile | null>(`/directory/${userId}`),
       listByRole: (role: Role) => api.get<readonly UserProfile[]>(`/directory${qs({ role })}`),
+      // POST /api/directory — admin / app_manager adds a member or coach
+      createPerson: (input: NewPersonInput) =>
+        api.post<{ user: UserProfile; temporaryPassword: string | null }>('/directory', input),
+      // PATCH /api/directory/:userId — map to a coach, change status
+      updatePerson: (userId: UserId, patch: PersonPatch) => api.patch<UserProfile>(`/directory/${userId}`, patch),
     },
 
     scheduling: {
@@ -170,6 +194,34 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL
       sendContactMessage: (message: ContactMessage) => api.post<void>('/contact', message),
       // POST /api/newsletter
       subscribeNewsletter: (email: string) => api.post<void>('/newsletter', { email }),
+    },
+
+    nutrition: {
+      capabilities: () => api.get<NutritionCapabilities>('/nutrition/capabilities'),
+      // POST /api/members/:id/food/analyze — Claude reads the photo; nothing saved
+      analyzeFoodPhoto: (memberId: UserId, photo: string, hint?: string) =>
+        api.post<FoodAnalysis>(`/members/${memberId}/food/analyze`, { photo, hint }),
+      listFoodEntries: (memberId: UserId, range: { from: IsoDate; to: IsoDate }) =>
+        api.get<readonly FoodEntry[]>(`/members/${memberId}/food${qs(range)}`),
+      dailyTotals: (memberId: UserId, range: { from: IsoDate; to: IsoDate }) =>
+        api.get<readonly DailyTotals[]>(`/members/${memberId}/food/summary${qs(range)}`),
+      logFood: (memberId: UserId, input: FoodEntryInput) => api.post<FoodEntry>(`/members/${memberId}/food`, input),
+      updateFood: (memberId: UserId, entryId: FoodEntryId, patch: FoodEntryPatch) =>
+        api.patch<FoodEntry>(`/members/${memberId}/food/${entryId}`, patch),
+      deleteFood: (memberId: UserId, entryId: FoodEntryId) => api.delete<void>(`/members/${memberId}/food/${entryId}`),
+      getFoodPhoto: async (memberId: UserId, entryId: FoodEntryId) => {
+        try {
+          return (await api.get<{ dataUrl: string }>(`/members/${memberId}/food/${entryId}/photo`)).dataUrl
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) return null
+          throw error
+        }
+      },
+      getDietPlan: (memberId: UserId) => api.get<DietPlan | null>(`/members/${memberId}/diet-plan`),
+      listDietPlans: (memberId: UserId) => api.get<readonly DietPlan[]>(`/members/${memberId}/diet-plan/history`),
+      // PUT /api/members/:id/diet-plan — author comes from the bearer token
+      saveDietPlan: (memberId: UserId, input: DietPlanInput, _author: UserProfile) =>
+        api.put<DietPlan>(`/members/${memberId}/diet-plan`, input),
     },
 
     content: {

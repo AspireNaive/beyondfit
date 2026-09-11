@@ -1,5 +1,5 @@
 import type { Timestamp } from 'firebase-admin/firestore'
-import { col, db, docOf, runTransaction, Timestamp as Ts, toIso } from '../../db/firestore.js'
+import { col, db, docOf, isMissingIndexError, runTransaction, Timestamp as Ts, toIso } from '../../db/firestore.js'
 import type { Page, Post, PostBlock, PostStatus, Role } from '../../domain.js'
 import { conflict } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
@@ -100,11 +100,7 @@ export function readingMinutes(blocks: readonly PostBlock[]): number {
  * FAILED_PRECONDITION (9), the REST transport GoDaddy uses maps the HTTP 400
  * to INVALID_ARGUMENT (3). The message is the same on both, so match on it.
  */
-const isMissingIndex = (err: unknown) => {
-  if (typeof err !== 'object' || err === null) return false
-  const { code, message } = err as { code?: number; message?: string }
-  return code === 9 || /requires an index/i.test(message ?? '')
-}
+const isMissingIndex = isMissingIndexError
 
 let warnedMissingIndex = false
 
