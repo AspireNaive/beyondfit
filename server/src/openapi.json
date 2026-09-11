@@ -2157,7 +2157,7 @@
                   "type": "about:blank",
                   "title": "Too Many Requests",
                   "status": 429,
-                  "detail": "That is 10 photo analyses today — the daily limit. You can still log meals manually until tomorrow.",
+                  "detail": "That is 5 photo analyses today — the daily limit. You can still log meals manually until tomorrow.",
                   "code": "ai_quota"
                 }
               }
@@ -7998,9 +7998,9 @@
         "example": {
           "photoAnalysis": true,
           "model": "claude-opus-5",
-          "dailyLimit": 10,
+          "dailyLimit": 5,
           "usedToday": 2,
-          "remainingToday": 8
+          "remainingToday": 3
         }
       },
       "PhotoAnalysisModel": {

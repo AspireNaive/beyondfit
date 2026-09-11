@@ -49,7 +49,7 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.enum(['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']).default('claude-opus-5'),
   /** Platform default for photo analyses per member per day; studios can lower or raise it. */
-  PHOTO_ANALYSIS_DAILY_LIMIT: z.coerce.number().int().min(0).max(1000).default(10),
+  PHOTO_ANALYSIS_DAILY_LIMIT: z.coerce.number().int().min(0).max(1000).default(5),
 
   BOOTSTRAP_TENANT_NAME: z.string().default('Kedem Life'),
   BOOTSTRAP_TENANT_SLUG: z.string().default('kedem'),

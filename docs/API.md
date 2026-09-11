@@ -186,10 +186,16 @@ member. Unknown member → 404; anyone else → 403.
 
 Food diary and diet plans, under `/members/{memberId}`. Reads follow the
 member-data rule above; only the member writes to their own diary (coaches and
-staff get 403 on diary writes), and only coaches and staff write diet plans. Photo analysis uses Claude (server env
-`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-opus-5`); without
-a key the diary works with manual entry and `analyze` answers 503
-`ai_unavailable`. Photos travel as base64 data URLs (the client downsizes to
+staff get 403 on diary writes), and only coaches and staff write diet plans.
+Photo analysis uses Claude (server env `ANTHROPIC_API_KEY`). The **model** and
+the **daily cap** come from the studio's `Tenant.nutrition` settings, falling
+back to the platform defaults `ANTHROPIC_MODEL` (`claude-opus-5`) and
+`PHOTO_ANALYSIS_DAILY_LIMIT` (5 — one analysed photo per meal, five meals).
+The cap counts analyses (one per call, re-analyses included), not meals. Each
+analysis takes one slot of the member's allowance for the UTC day (a failed
+model call gives it back); at the cap `analyze` answers 429 `ai_quota`, and a
+cap of 0 answers 403 `ai_disabled`. Without a key the diary works with manual
+entry and `analyze` answers 503 `ai_unavailable`. Photos travel as base64 data URLs (the client downsizes to
 ~1024 px); these routes accept bodies up to 8 MB. A meal's full photo is a
 separate document so diary lists stay light; `thumbDataUrl` is the inline preview.
 

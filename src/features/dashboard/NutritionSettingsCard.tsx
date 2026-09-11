@@ -71,12 +71,12 @@ export function NutritionSettingsCard({ tenant }: { tenant: Tenant }) {
             ))}
           </Select>
           <Input
-            label="Photos per member per day"
+            label="Analysed photos per member per day"
             inputMode="numeric"
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
             placeholder="Default"
-            hint={off ? 'Zero switches analysis off; members log manually.' : 'Blank uses the platform default.'}
+            hint={off ? 'Zero switches analysis off; members log manually.' : 'Counts analyses, not meals; re-analysing a photo uses one too. Blank uses the platform default (5).'}
           />
         </div>
 
