@@ -33,7 +33,7 @@ const CSP_DIRECTIVES = {
   styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
   fontSrc: ["'self'", 'https://fonts.gstatic.com'],
   // Blog authors link images and videos from wherever they host them.
-  imgSrc: ["'self'", 'data:', 'https:'],
+  imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
   mediaSrc: ["'self'", 'https:'],
   frameSrc: ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
   connectSrc: ["'self'"],
