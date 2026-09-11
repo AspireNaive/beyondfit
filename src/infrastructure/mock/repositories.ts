@@ -3,10 +3,23 @@ import {
   Role,
   type AuthSession,
   type LoginRequest,
+  type NewPersonInput,
+  type PersonPatch,
   type RegisterRequest,
   type Tenant,
   type UserProfile,
 } from '@/domain/identity/model'
+import {
+  sumMacros,
+  type DailyTotals,
+  type DietPlan,
+  type DietPlanInput,
+  type FoodAnalysis,
+  type FoodEntry,
+  type FoodEntryInput,
+  type FoodEntryPatch,
+  type NutritionCapabilities,
+} from '@/domain/nutrition/model'
 import {
   AppointmentStatus,
   MeetingChannel,
@@ -47,13 +60,14 @@ import type {
   Container,
   DirectoryPort,
   MarketingPort,
+  NutritionPort,
   OrdersPort,
   PaymentsPort,
   ProgressPort,
   SchedulingPort,
   TenantPort,
 } from '@/domain/ports'
-import { id, type IsoDate, type OrderId, type Page, type PostId, type UserId } from '@/domain/shared/types'
+import { id, type FoodEntryId, type IsoDate, type OrderId, type Page, type PostId, type UserId } from '@/domain/shared/types'
 import { today } from '@/shared/lib/dates'
 import {
   ACTIVITY,
@@ -61,6 +75,8 @@ import {
   BODY_METRICS,
   DEFAULT_TENANT,
   DEMO_PASSWORD,
+  DIET_PLANS,
+  FOOD_ENTRIES,
   GOALS,
   ORDERS,
   PAYMENTS,
@@ -88,6 +104,9 @@ const orders: Order[] = [...ORDERS]
 const bodyMetrics: BodyMetricEntry[] = [...BODY_METRICS]
 const users: UserProfile[] = [...USERS]
 const posts: Post[] = [...POSTS]
+const foodEntries: FoodEntry[] = [...FOOD_ENTRIES]
+const foodPhotos = new Map<string, string>()
+const dietPlans: DietPlan[] = [...DIET_PLANS]
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -233,11 +252,7 @@ class MockDirectory implements DirectoryPort {
         const coaches = sameTenant.filter((u) => u.role === Role.Coach)
         return delay(withSelf(coaches))
       }
-      case Role.Coach: {
-        const assigned = sameTenant.filter((u) => u.assignedCoachId === viewer.id)
-        const peers = sameTenant.filter((u) => u.role === Role.Coach && u.id !== viewer.id)
-        return delay(withSelf([...assigned, ...peers]))
-      }
+      case Role.Coach:
       case Role.Admin:
         return delay(withSelf(sameTenant))
       case Role.AppManager:
@@ -251,6 +266,55 @@ class MockDirectory implements DirectoryPort {
 
   async listByRole(role: Role): Promise<readonly UserProfile[]> {
     return delay(users.filter((u) => u.role === role))
+  }
+
+  async createPerson(input: NewPersonInput): Promise<{ user: UserProfile; temporaryPassword: string | null }> {
+    await delay(null, 500)
+    if (findUserByEmail(input.email) || users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+      throw new Error('An account already exists for that email.')
+    }
+    const tenantId = input.tenantId ?? DEFAULT_TENANT.id
+    const user: UserProfile = {
+      id: id<'User'>(`u-${input.role}-${Date.now()}`),
+      tenantId,
+      role: input.role,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName.trim(),
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone ?? undefined,
+      title: input.title ?? undefined,
+      bio: input.bio ?? undefined,
+      joinedAt: today(),
+      specialties: input.role === Role.Coach ? (input.specialties ?? undefined) : undefined,
+      credentials: input.role === Role.Coach ? (input.credentials ?? undefined) : undefined,
+      assignedCoachId:
+        input.role === Role.Member ? (input.assignedCoachId ?? id<'User'>('u-coach-mara')) : null,
+      avatarUrl: null,
+      status: 'active',
+    }
+    users.push(user)
+    return { user, temporaryPassword: input.password ? null : `welcome-${Math.random().toString(36).slice(2, 8)}` }
+  }
+
+  async updatePerson(userId: UserId, patch: PersonPatch): Promise<UserProfile> {
+    await delay(null, 320)
+    const index = users.findIndex((u) => u.id === userId)
+    if (index === -1) throw new Error('Person not found.')
+    const current = users[index]!
+    if (patch.assignedCoachId !== undefined) {
+      if (current.role !== Role.Member) throw new Error('Only members are assigned to a coach.')
+      if (patch.assignedCoachId && !users.some((u) => u.id === patch.assignedCoachId && u.role === Role.Coach && u.tenantId === current.tenantId)) {
+        throw new Error('That coach is not in this studio.')
+      }
+    }
+    const updated: UserProfile = {
+      ...current,
+      ...(patch.assignedCoachId !== undefined ? { assignedCoachId: patch.assignedCoachId } : {}),
+      ...(patch.status ? { status: patch.status } : {}),
+      ...(patch.title !== undefined ? { title: patch.title ?? undefined } : {}),
+    }
+    users[index] = updated
+    return updated
   }
 }
 
@@ -646,6 +710,147 @@ class MockContent implements ContentPort {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Nutrition (food diary + diet plans)
+// ---------------------------------------------------------------------------
+
+/**
+ * The mock cannot look at a photo, so it returns a plausible plate with low
+ * confidence and says so — enough to exercise the review-and-correct flow.
+ */
+const MOCK_ANALYSIS: FoodAnalysis['items'] = [
+  { name: 'Grilled chicken breast', portion: '150 g', calories: 250, proteinG: 46, carbsG: 0, fatG: 5 },
+  { name: 'Mixed salad with olive oil', portion: '1 bowl', calories: 150, proteinG: 2, carbsG: 8, fatG: 12 },
+  { name: 'Wholegrain bread', portion: '1 slice', calories: 80, proteinG: 4, carbsG: 14, fatG: 1 },
+]
+
+class MockNutrition implements NutritionPort {
+  async capabilities(): Promise<NutritionCapabilities> {
+    return delay({ photoAnalysis: true, model: 'mock' }, 60)
+  }
+
+  async analyzeFoodPhoto(_memberId: UserId, _photo: string, hint?: string): Promise<FoodAnalysis> {
+    await delay(null, 1400)
+    return {
+      dishName: hint?.trim() || 'Chicken salad plate',
+      items: MOCK_ANALYSIS,
+      totals: sumMacros(MOCK_ANALYSIS),
+      confidence: 'low',
+      notes: 'Demo mode: this is a sample estimate, not a reading of your photo. Connect the API for real analysis.',
+      model: 'mock',
+    }
+  }
+
+  async listFoodEntries(memberId: UserId, range: { from: IsoDate; to: IsoDate }): Promise<readonly FoodEntry[]> {
+    return delay(
+      foodEntries
+        .filter((e) => e.memberId === memberId && e.date >= range.from && e.date <= range.to)
+        .sort((a, b) => b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt)),
+    )
+  }
+
+  async dailyTotals(memberId: UserId, range: { from: IsoDate; to: IsoDate }): Promise<readonly DailyTotals[]> {
+    const rows = await this.listFoodEntries(memberId, range)
+    const byDay = new Map<string, { totals: FoodEntry['totals']; meals: number }>()
+    for (const e of rows) {
+      const day = byDay.get(e.date) ?? { totals: sumMacros([]), meals: 0 }
+      byDay.set(e.date, { totals: sumMacros([day.totals, e.totals]), meals: day.meals + 1 })
+    }
+    return [...byDay.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date))
+  }
+
+  async logFood(memberId: UserId, input: FoodEntryInput): Promise<FoodEntry> {
+    await delay(null, 420)
+    const member = users.find((u) => u.id === memberId)
+    const now = new Date().toISOString()
+    const created: FoodEntry = {
+      id: id<'FoodEntry'>(`f-${Date.now()}`),
+      tenantId: member?.tenantId ?? DEFAULT_TENANT.id,
+      memberId,
+      date: input.date,
+      mealType: input.mealType,
+      loggedAt: now,
+      title: input.title,
+      items: input.items,
+      totals: sumMacros(input.items),
+      notes: input.notes ?? null,
+      source: input.photoDataUrl ? 'photo' : (input.source ?? 'manual'),
+      thumbDataUrl: input.thumbDataUrl ?? null,
+      hasPhoto: Boolean(input.photoDataUrl),
+      createdAt: now,
+      updatedAt: now,
+    }
+    if (input.photoDataUrl) foodPhotos.set(created.id, input.photoDataUrl)
+    foodEntries.unshift(created)
+    return created
+  }
+
+  async updateFood(memberId: UserId, entryId: FoodEntryId, patch: FoodEntryPatch): Promise<FoodEntry> {
+    await delay(null, 320)
+    const index = foodEntries.findIndex((e) => e.id === entryId && e.memberId === memberId)
+    if (index === -1) throw new Error('Meal not found.')
+    const current = foodEntries[index]!
+    const items = patch.items ?? current.items
+    const updated: FoodEntry = {
+      ...current,
+      ...patch,
+      notes: patch.notes === undefined ? current.notes : patch.notes,
+      items,
+      totals: sumMacros(items),
+      updatedAt: new Date().toISOString(),
+    }
+    foodEntries[index] = updated
+    return updated
+  }
+
+  async deleteFood(memberId: UserId, entryId: FoodEntryId): Promise<void> {
+    await delay(null, 260)
+    const index = foodEntries.findIndex((e) => e.id === entryId && e.memberId === memberId)
+    if (index >= 0) foodEntries.splice(index, 1)
+    foodPhotos.delete(entryId)
+  }
+
+  async getFoodPhoto(_memberId: UserId, entryId: FoodEntryId): Promise<string | null> {
+    return delay(foodPhotos.get(entryId) ?? null, 200)
+  }
+
+  async getDietPlan(memberId: UserId): Promise<DietPlan | null> {
+    return delay(dietPlans.find((p) => p.memberId === memberId && p.status === 'active') ?? null, 180)
+  }
+
+  async listDietPlans(memberId: UserId): Promise<readonly DietPlan[]> {
+    return delay(
+      dietPlans
+        .filter((p) => p.memberId === memberId)
+        .sort((a, b) => (a.status === 'active' ? -1 : b.status === 'active' ? 1 : b.updatedAt.localeCompare(a.updatedAt))),
+    )
+  }
+
+  async saveDietPlan(memberId: UserId, input: DietPlanInput, author: UserProfile): Promise<DietPlan> {
+    await delay(null, 480)
+    const member = users.find((u) => u.id === memberId)
+    const now = new Date().toISOString()
+    for (let i = 0; i < dietPlans.length; i++) {
+      const p = dietPlans[i]!
+      if (p.memberId === memberId && p.status === 'active') dietPlans[i] = { ...p, status: 'archived', updatedAt: now }
+    }
+    const created: DietPlan = {
+      id: id<'DietPlan'>(`dp-${Date.now()}`),
+      tenantId: member?.tenantId ?? DEFAULT_TENANT.id,
+      memberId,
+      authorId: author.id,
+      authorName: `${author.firstName} ${author.lastName}`,
+      authorRole: author.role,
+      ...input,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    }
+    dietPlans.unshift(created)
+    return created
+  }
+}
+
 export const mockContainer: Container = {
   auth: new MockAuth(),
   directory: new MockDirectory(),
@@ -657,4 +862,5 @@ export const mockContainer: Container = {
   tenants: new MockTenants(),
   marketing: new MockMarketing(),
   content: new MockContent(),
+  nutrition: new MockNutrition(),
 }

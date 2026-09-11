@@ -1,5 +1,5 @@
 import type { Timestamp } from 'firebase-admin/firestore'
-import { col, db, docOf, runTransaction, Timestamp as Ts, toIso } from '../../db/firestore.js'
+import { col, db, docOf, isMissingIndexError, runTransaction, Timestamp as Ts, toIso } from '../../db/firestore.js'
 import type { Page, Post, PostBlock, PostStatus, Role } from '../../domain.js'
 import { conflict } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
@@ -94,17 +94,9 @@ export function readingMinutes(blocks: readonly PostBlock[]): number {
  * exists. GoDaddy and Vercel deploy the code but not `firestore.indexes.json`,
  * so rather than 500 the feed until someone runs
  * `firebase deploy --only firestore:indexes`, fetch the filtered set unordered
- * and sort here. Slower on a big blog, correct on every host.
- *
- * The error's numeric code depends on the transport: gRPC reports
- * FAILED_PRECONDITION (9), the REST transport GoDaddy uses maps the HTTP 400
- * to INVALID_ARGUMENT (3). The message is the same on both, so match on it.
+ * and sort here. Slower on a big blog, correct on every host. (The transport
+ * quirk in recognising the error lives with `isMissingIndexError`.)
  */
-const isMissingIndex = (err: unknown) => {
-  if (typeof err !== 'object' || err === null) return false
-  const { code, message } = err as { code?: number; message?: string }
-  return code === 9 || /requires an index/i.test(message ?? '')
-}
 
 let warnedMissingIndex = false
 
@@ -122,7 +114,7 @@ export async function rowsOrdered(
     const snap = await ordered.get()
     return { rows: snap.docs.map((d) => docOf<PostDoc>(d)!), total: snap.size }
   } catch (err) {
-    if (!isMissingIndex(err)) throw err
+    if (!isMissingIndexError(err)) throw err
     if (!warnedMissingIndex) {
       warnedMissingIndex = true
       logger.warn('posts: composite index missing — sorting in memory. Run `firebase deploy --only firestore:indexes`.')

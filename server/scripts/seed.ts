@@ -16,6 +16,8 @@ import {
   APPOINTMENTS,
   BODY_METRICS,
   DEMO_PASSWORD,
+  DIET_PLANS,
+  FOOD_ENTRIES,
   GOALS,
   ORDERS,
   PAYMENTS,
@@ -34,6 +36,7 @@ import { newId } from '../src/lib/ids.js'
 import { insertAppointment } from '../src/modules/appointments/repository.js'
 import { insertProduct } from '../src/modules/catalog/repository.js'
 import { insertPost } from '../src/modules/content/repository.js'
+import { insertFoodEntry, replaceDietPlan } from '../src/modules/nutrition/repository.js'
 import { insertOrder, insertSubscription, paymentDoc } from '../src/modules/orders/repository.js'
 import { activityId, metricDoc } from '../src/modules/progress/repository.js'
 import { insertProvider, setHours } from '../src/modules/providers/repository.js'
@@ -175,6 +178,20 @@ export async function seed(options: { reset?: boolean } = {}): Promise<void> {
     })
   }
   log(`posts: ${POSTS.length}`)
+
+  for (const f of FOOD_ENTRIES) {
+    await insertFoodEntry({
+      id: f.id, tenantId: f.tenantId, memberId: f.memberId, date: f.date, mealType: f.mealType, loggedAt: new Date(f.loggedAt),
+      title: f.title, items: f.items.map((i) => ({ ...i })), notes: f.notes, source: f.source, thumbDataUrl: f.thumbDataUrl, photoDataUrl: null,
+    })
+  }
+  for (const d of DIET_PLANS) {
+    await replaceDietPlan({
+      id: d.id, tenantId: d.tenantId, memberId: d.memberId, authorId: d.authorId, authorName: d.authorName, authorRole: d.authorRole,
+      title: d.title, summary: d.summary, targets: d.targets, meals: d.meals.map((m) => ({ ...m })), guidelines: [...d.guidelines], createdAt: new Date(d.createdAt),
+    })
+  }
+  log(`food entries: ${FOOD_ENTRIES.length}, diet plans: ${DIET_PLANS.length}`)
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]

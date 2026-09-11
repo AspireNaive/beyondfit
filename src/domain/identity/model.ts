@@ -109,6 +109,33 @@ export type UserProfile = {
   readonly status: 'active' | 'invited' | 'suspended'
 }
 
+/** What a studio admin supplies when adding a member or a coach. */
+export type NewPersonInput = {
+  readonly role: typeof Role.Member | typeof Role.Coach
+  readonly firstName: string
+  readonly lastName: string
+  readonly email: string
+  readonly phone?: string | null
+  readonly title?: string | null
+  readonly bio?: string | null
+  /** Leave empty to have one generated and shown once. */
+  readonly password?: string | null
+  readonly assignedCoachId?: UserId | null
+  readonly specialties?: readonly string[] | null
+  readonly credentials?: readonly string[] | null
+  /** Coaches only: what they can be booked for and their hourly rate (minor units). */
+  readonly discipline?: string | null
+  readonly sessionRateMinor?: number | null
+  /** App managers may pick the studio; admins always add to their own. */
+  readonly tenantId?: TenantId | null
+}
+
+export type PersonPatch = {
+  readonly assignedCoachId?: UserId | null
+  readonly status?: UserProfile['status']
+  readonly title?: string | null
+}
+
 export const fullName = (user: Pick<UserProfile, 'firstName' | 'lastName'>) =>
   `${user.firstName} ${user.lastName}`.trim()
 

@@ -89,6 +89,11 @@
    "key": "postSlug",
    "value": "why-zone-2-is-the-base-of-everything",
    "type": "string"
+  },
+  {
+   "key": "foodEntryId",
+   "value": "f-0-lunch",
+   "type": "string"
   }
  ],
  "item": [
@@ -571,6 +576,76 @@
       "description": "Returns 200 with JSON null when unknown or not visible."
      },
      "response": []
+    },
+    {
+     "name": "Add a member or coach (admin)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/directory",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "directory"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"role\": \"member\",\n  \"firstName\": \"Sam\",\n  \"lastName\": \"Reyes\",\n  \"email\": \"sam@example.com\",\n  \"assignedCoachId\": \"u-coach-mara\",\n  \"password\": null\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 { user, temporaryPassword }. Omit password to have one generated and returned once."
+     },
+     "response": []
+    },
+    {
+     "name": "Map member to coach (admin)",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/directory/:userId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "directory",
+        ":userId"
+       ],
+       "variable": [
+        {
+         "key": "userId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"assignedCoachId\": \"u-coach-priya\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": []
     }
    ]
   },
@@ -1019,6 +1094,370 @@
         }
        }
       }
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "Nutrition",
+   "description": "Food diary + diet plans under /members/:memberId. Photo analysis needs ANTHROPIC_API_KEY on the server; without it analyze → 503 ai_unavailable and manual logging still works.",
+   "item": [
+    {
+     "name": "Capabilities",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/nutrition/capabilities",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "nutrition",
+        "capabilities"
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Analyse a food photo",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food/analyze",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food",
+        "analyze"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"photo\": \"data:image/jpeg;base64,<base64>\",\n  \"hint\": \"half portion\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Nothing is saved. Bodies up to 8 MB."
+     },
+     "response": []
+    },
+    {
+     "name": "Food diary",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ],
+       "query": [
+        {
+         "key": "from",
+         "value": "{{date}}",
+         "disabled": true
+        },
+        {
+         "key": "to",
+         "value": "{{date}}",
+         "disabled": true
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Calories per day",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food/summary",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food",
+        "summary"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Log a meal",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"date\": \"{{date}}\",\n  \"mealType\": \"lunch\",\n  \"title\": \"Chicken and rice\",\n  \"items\": [\n    {\n      \"name\": \"Grilled chicken breast\",\n      \"portion\": \"150 g\",\n      \"calories\": 250,\n      \"proteinG\": 46,\n      \"carbsG\": 0,\n      \"fatG\": 5\n    },\n    {\n      \"name\": \"Basmati rice\",\n      \"portion\": \"180 g cooked\",\n      \"calories\": 235,\n      \"proteinG\": 5,\n      \"carbsG\": 50,\n      \"fatG\": 1\n    }\n  ],\n  \"notes\": null,\n  \"photoDataUrl\": null,\n  \"thumbDataUrl\": null\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "201 FoodEntry; totals computed server-side."
+     },
+     "response": []
+    },
+    {
+     "name": "Meal photo",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food/:entryId/photo",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food",
+        ":entryId",
+        "photo"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        },
+        {
+         "key": "entryId",
+         "value": "{{foodEntryId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Edit a meal",
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food/:entryId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food",
+        ":entryId"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        },
+        {
+         "key": "entryId",
+         "value": "{{foodEntryId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"items\": [\n    {\n      \"name\": \"Grilled chicken breast\",\n      \"portion\": \"200 g\",\n      \"calories\": 330,\n      \"proteinG\": 62,\n      \"carbsG\": 0,\n      \"fatG\": 7\n    }\n  ]\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Delete a meal",
+     "request": {
+      "method": "DELETE",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/food/:entryId",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "food",
+        ":entryId"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        },
+        {
+         "key": "entryId",
+         "value": "{{foodEntryId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Current diet plan",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/diet-plan",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "diet-plan"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Diet plan history",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/diet-plan/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "diet-plan",
+        "history"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      }
+     },
+     "response": []
+    },
+    {
+     "name": "Write a diet plan (coach/admin)",
+     "request": {
+      "method": "PUT",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/members/:memberId/diet-plan",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "members",
+        ":memberId",
+        "diet-plan"
+       ],
+       "variable": [
+        {
+         "key": "memberId",
+         "value": "{{memberId}}"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"title\": \"Lean-out phase: 12 weeks\",\n  \"summary\": \"Modest deficit, protein high.\",\n  \"targets\": {\n    \"calories\": 2200,\n    \"proteinG\": 170,\n    \"carbsG\": 210,\n    \"fatG\": 70\n  },\n  \"meals\": [\n    {\n      \"name\": \"Breakfast\",\n      \"time\": \"07:00\",\n      \"description\": \"Yoghurt or eggs, toast, fruit.\",\n      \"calories\": 450\n    },\n    {\n      \"name\": \"Dinner\",\n      \"time\": \"19:30\",\n      \"description\": \"Protein, starch, two fists of vegetables.\",\n      \"calories\": 750\n    }\n  ],\n  \"guidelines\": [\n    \"Protein at every meal\",\n    \"Two litres of water\"\n  ]\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Archives the previous active plan."
      },
      "response": []
     }

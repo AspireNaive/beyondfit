@@ -23,7 +23,8 @@ suspended account yields 403 with `code: "suspended"`, even where no token was
 required. The user row is re-read on each request, so role changes and
 suspensions take effect immediately rather than at token expiry.
 
-**JSON in, JSON out.** Request bodies are JSON (limit 256 kB). Responses are
+**JSON in, JSON out.** Request bodies are JSON (limit 256 kB; 8 MB on the
+`/members/{id}/food*` routes, which carry photos). Responses are
 JSON. Handlers that have nothing to return answer `204 No Content`. A few
 single-record lookups deliberately return `200` with a JSON `null` body instead
 of 404 (single directory profile, provider, product by slug, order) so the front
@@ -46,7 +47,8 @@ end can render its own empty state; they are flagged in the tables.
   the user.
 - `code` appears only for specific failures: `invalid_credentials`,
   `wrong_portal`, `suspended`, `email_taken`, `seats_full`, `reset_invalid`,
-  `out_of_stock`, `payment_failed`, `already_subscribed`, `slug_taken`, `validation`.
+  `out_of_stock`, `payment_failed`, `already_subscribed`, `slug_taken`, `coach_not_found`,
+  `ai_unavailable`, `ai_busy`, `ai_failed`, `ai_no_result`, `unsupported_media`, `photo_too_large`, `validation`.
 - `errors` maps a dotted field path (or `_`) to messages. It is present on
   every 422 schema failure and on some 422 business-rule failures.
 - Schema validation (zod) is 422. Malformed JSON is 400. A duplicate key (email, product slug, booking slot) is 409.
@@ -88,7 +90,10 @@ Where the permissions bite:
 | `orders:read` | `PATCH /orders/{id}` (then ownership rules apply) |
 
 `progress:read:*` and `appointments:write` are not checked by middleware; the
-equivalent rules live in the services and are described per route below. Two
+equivalent rules live in the services and are described per route below. The
+**member-data rule** used by progress and nutrition: a member reads and writes
+their own; every coach in the member's studio, the studio admin and
+`app_manager` read (coaches and staff also write diet plans); nothing else. Two
 cross-cutting rules: `app_manager` sees and may act on every studio, and nothing
 else ever crosses a studio (tenant) boundary.
 
@@ -129,6 +134,17 @@ All routes require a bearer token.
 | GET | `/directory?role=` | bearer | List one role | `role` required (`member\|coach\|admin\|app_manager`, else 422). Scoped to the caller's studio (app_manager: platform-wide). A member asking for `role=member` gets 403. |
 | GET | `/directory/{userId}` | bearer | One profile | 200 `UserProfile` **or `null`** when unknown or not visible. Visible: yourself; anyone for app_manager; otherwise same studio, where admin/coach see everyone and members see staff only. |
 
+Studio management (admin for their own studio, `app_manager` for any):
+
+| Method | Path | Auth | Purpose | Notes |
+|---|---|---|---|---|
+| POST | `/directory` | bearer, admin / app_manager | Add a member or coach | Body `{ role: member\|coach, firstName, lastName, email, phone?, title?, bio?, password?, assignedCoachId?, specialties?, credentials?, discipline? (coach; default coaching), sessionRateMinor? (coach; default per discipline), tenantId? (app_manager only) }` → 201 `{ user: UserProfile, temporaryPassword }`. Without `password` one is generated and returned **once**. Members default to the studio's head coach; a member seat must be free (409 `seats_full`). A coach also gets a provider row with default hours, so they are bookable at once. 409 `email_taken`; 400 `coach_not_found`. |
+| PATCH | `/directory/{userId}` | bearer, admin / app_manager | Map to a coach, change status | Body any of `{ assignedCoachId (coach in the same studio, or null), status (active\|invited\|suspended), title }` → 200 `UserProfile`. Only members take a coach. An admin manages members and coaches only; `app_manager` also manages admins; nobody manages a peer, and you cannot suspend yourself (403 / 400). |
+
+`GET /directory/mapped` for a **coach** now returns every member of the studio
+plus fellow coaches (the UI flags the coach's own clients), not only assigned
+members — and no studio or platform staff.
+
 ## Providers
 
 Public — the specialist finder is part of the marketing site.
@@ -165,6 +181,31 @@ member. Unknown member → 404; anyone else → 403.
 | PUT | `/members/{memberId}/activity/{date}` | bearer | Replace one day | Body `{ steps, activeMinutes, caloriesBurned, caloriesConsumed, proteinGrams, waterMl, sleepHours, workouts }` — every field defaults to 0, so send the whole day → 200 `ActivityEntry`. |
 | GET | `/members/{memberId}/goal` | bearer | Goal | → `MemberGoal`; the default (2200 kcal, 150 g protein, 10 000 steps, 4 workouts, "General health") when none saved. |
 | PUT | `/members/{memberId}/goal` | bearer | Replace goal | Body `{ targetWeightKg?, dailyCalorieTarget (800–10000), dailyProteinTarget (20–500), dailyStepTarget (1000–100000), weeklyWorkoutTarget (0–14), focus }` → 200 `MemberGoal`. |
+
+## Nutrition
+
+Food diary and diet plans, under `/members/{memberId}`. Reads follow the
+member-data rule above; only the member writes to their own diary (coaches and
+staff get 403 on diary writes), and only coaches and staff write diet plans. Photo analysis uses Claude (server env
+`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-opus-5`); without
+a key the diary works with manual entry and `analyze` answers 503
+`ai_unavailable`. Photos travel as base64 data URLs (the client downsizes to
+~1024 px); these routes accept bodies up to 8 MB. A meal's full photo is a
+separate document so diary lists stay light; `thumbDataUrl` is the inline preview.
+
+| Method | Path | Auth | Purpose | Notes |
+|---|---|---|---|---|
+| GET | `/nutrition/capabilities` | bearer | Is photo analysis on? | → `{ photoAnalysis, model }`. |
+| POST | `/members/{memberId}/food/analyze` | bearer | Estimate a meal from a photo | Body `{ photo (data URL or base64 JPEG/PNG/WebP/GIF), hint? }` → `FoodAnalysis` `{ dishName, items[{ name, portion, calories, proteinG, carbsG, fatG }], totals, confidence (low\|medium\|high), notes, model }`. Nothing is saved. 503 `ai_unavailable`, 429 `ai_busy`, 502 `ai_failed`, 422 `ai_no_result`, 400 `unsupported_media` / `photo_too_large`. |
+| GET | `/members/{memberId}/food?from&to` | bearer | Diary | Dates `YYYY-MM-DD`, default last 14 days → `FoodEntry[]` newest first. |
+| GET | `/members/{memberId}/food/summary?from&to` | bearer | Calories per day | Default last 30 days → `[{ date, totals, meals }]` newest first. |
+| POST | `/members/{memberId}/food` | bearer, the member | Log a meal | Body `{ date, mealType (breakfast\|lunch\|dinner\|snack), title, items (1–40), notes?, source?="manual", photoDataUrl?, thumbDataUrl? }` → 201 `FoodEntry`. `totals` are computed server-side; a photo sets `source: "photo"` and `hasPhoto`. |
+| GET | `/members/{memberId}/food/{entryId}/photo` | bearer | Full photo | → `{ dataUrl }`; 404 when none. |
+| PATCH | `/members/{memberId}/food/{entryId}` | bearer, the member | Edit a meal | Any of `date, mealType, title, items, notes` → 200 `FoodEntry` (totals recomputed). |
+| DELETE | `/members/{memberId}/food/{entryId}` | bearer, the member | Delete | → 204; removes the photo too. |
+| GET | `/members/{memberId}/diet-plan` | bearer | Current plan | → `DietPlan` **or `null`**. |
+| GET | `/members/{memberId}/diet-plan/history` | bearer | Every plan | Active first, then newest → `DietPlan[]`. |
+| PUT | `/members/{memberId}/diet-plan` | bearer, coach / admin / app_manager | Write a plan | Body `{ title, summary?, targets { calories (800–10000), proteinG, carbsG, fatG }, meals[{ name, time?, description, calories? }] (1–12), guidelines[] (≤15) }` → 200 `DietPlan` with `status: "active"`; the previous active plan becomes `archived`. Members get 403. |
 
 ## Catalog
 

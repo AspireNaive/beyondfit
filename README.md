@@ -55,6 +55,26 @@ the in-memory adapter is only used with `VITE_API_MODE=mock`. `npm run
 db:seed` loads the demo posts with everything else; `npm run db:seed:posts`
 adds just the posts to a database that already has studios and people.
 
+## Nutrition: food diary, photo calories, diet plans
+
+Members keep a **food diary** at `/app/nutrition`: snap a photo of a meal and
+the API asks Claude to identify the foods and estimate portions, calories and
+macros; the member corrects anything before saving, or types a meal in by
+hand. Every day shows totals against the member's **diet plan** (or their goal
+when there is none) and a fortnight of daily totals. **Coaches and studio
+admins** read any member's diary from their profile and write the diet plan
+at `/app/nutrition/:memberId/plan` — targets, meals, guidelines; saving
+archives the previous plan so the history stays. **Admins** add members and
+coaches from *People → Add a person* (a temporary password is shown once) and
+map a member to a coach from the member's profile. Coaches see every member
+in their studio, with their own clients flagged.
+
+Photo analysis needs `ANTHROPIC_API_KEY` on the API host (`ANTHROPIC_MODEL`
+defaults to `claude-opus-5`). Without it the diary still works with manual
+entry and the app says analysis is off. Photos are downsized in the browser
+(~1024 px) and stored in Firestore next to the entry; no extra storage bucket
+is needed.
+
 ## Running it
 
 ```bash

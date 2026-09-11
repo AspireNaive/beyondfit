@@ -46,6 +46,10 @@ const PostPage = lazy(() => import('@/features/blog/PostPage'))
 const ManagePostsPage = lazy(() => import('@/features/blog/ManagePostsPage'))
 const PostEditorPage = lazy(() => import('@/features/blog/PostEditorPage'))
 
+// Nutrition (food diary + diet plans)
+const FoodDiaryPage = lazy(() => import('@/features/nutrition/FoodDiaryPage'))
+const DietPlanEditorPage = lazy(() => import('@/features/nutrition/DietPlanEditorPage'))
+
 // Specialists / booking
 const SpecialistsPage = lazy(() => import('@/features/booking/SpecialistsPage'))
 const BookingPage = lazy(() => import('@/features/booking/BookingPage'))
@@ -209,6 +213,16 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'progress/:memberId', element: shell(<ProgressPage />) },
+      { path: 'nutrition', element: shell(<FoodDiaryPage />) },
+      { path: 'nutrition/:memberId', element: shell(<FoodDiaryPage />) },
+      {
+        path: 'nutrition/:memberId/plan',
+        element: shell(
+          <RequireRole roles={[Role.Coach, Role.Admin, Role.AppManager]}>
+            <DietPlanEditorPage />
+          </RequireRole>,
+        ),
+      },
       { path: 'schedule', element: shell(<SchedulePage />) },
       { path: 'specialists', element: shell(<SpecialistsPage />) },
       { path: 'book/:providerId', element: shell(<BookingPage />) },

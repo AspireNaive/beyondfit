@@ -21,6 +21,8 @@ export type PaymentId = Id<'Payment'>
 export type ProductId = Id<'Product'>
 export type MetricEntryId = Id<'MetricEntry'>
 export type PostId = Id<'Post'>
+export type FoodEntryId = Id<'FoodEntry'>
+export type DietPlanId = Id<'DietPlan'>
 
 /** ISO-8601 instant, always UTC. Formatting to local time is a UI concern. */
 export type IsoDateTime = string

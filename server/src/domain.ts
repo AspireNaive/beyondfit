@@ -90,6 +90,18 @@ export type TenantPlan = (typeof TENANT_PLANS)[number]
 export const USER_STATUSES = ['active', 'invited', 'suspended'] as const
 export type UserStatus = (typeof USER_STATUSES)[number]
 
+export const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'] as const
+export type MealType = (typeof MEAL_TYPES)[number]
+
+export const FOOD_SOURCES = ['manual', 'photo'] as const
+export type FoodSource = (typeof FOOD_SOURCES)[number]
+
+export const ANALYSIS_CONFIDENCE = ['low', 'medium', 'high'] as const
+export type AnalysisConfidence = (typeof ANALYSIS_CONFIDENCE)[number]
+
+export const DIET_PLAN_STATUSES = ['active', 'archived'] as const
+export type DietPlanStatus = (typeof DIET_PLAN_STATUSES)[number]
+
 export const POST_STATUSES = ['draft', 'published'] as const
 export type PostStatus = (typeof POST_STATUSES)[number]
 
@@ -320,3 +332,61 @@ export type Post = {
 
 /** Paged envelope for list endpoints. */
 export type Page<T> = { items: T[]; total: number; page: number; pageSize: number }
+
+// ---- Nutrition (food diary + diet plans) -------------------------------------
+
+export type Macros = { calories: number; proteinG: number; carbsG: number; fatG: number }
+
+export type FoodItem = Macros & {
+  name: string
+  /** Human portion, e.g. "1 cup", "150 g", "2 slices". */
+  portion: string
+}
+
+/** What the photo analyser returns; the member edits it before saving. */
+export type FoodAnalysis = {
+  dishName: string
+  items: FoodItem[]
+  totals: Macros
+  confidence: AnalysisConfidence
+  notes: string | null
+  model: string
+}
+
+export type FoodEntry = {
+  id: string
+  tenantId: string
+  memberId: string
+  date: string
+  mealType: MealType
+  loggedAt: string
+  title: string
+  items: FoodItem[]
+  totals: Macros
+  notes: string | null
+  source: FoodSource
+  /** Small inline preview; the full photo is a separate request. */
+  thumbDataUrl: string | null
+  hasPhoto: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type DietPlanMeal = { name: string; time: string | null; description: string; calories: number | null }
+
+export type DietPlan = {
+  id: string
+  tenantId: string
+  memberId: string
+  authorId: string
+  authorName: string
+  authorRole: Role
+  title: string
+  summary: string
+  targets: Macros
+  meals: DietPlanMeal[]
+  guidelines: string[]
+  status: DietPlanStatus
+  createdAt: string
+  updatedAt: string
+}
