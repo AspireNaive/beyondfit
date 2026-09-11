@@ -147,11 +147,23 @@ export async function findFoodPhoto(memberId: string, entryId: string): Promise<
   return row && row.memberId === memberId ? row.dataUrl : null
 }
 
-/** Calories and macros per day over a range — for the coach's overview. */
+/**
+ * Calories and macros per day over a range — for the coach's overview. Reads
+ * only `date` and `totals`, never the inline thumbnails, so a month of photo
+ * meals costs kilobytes rather than megabytes.
+ */
 export async function dailyTotals(memberId: string, from: string, to: string): Promise<{ date: string; totals: Macros; meals: number }[]> {
-  const list = await listFoodEntries(memberId, from, to)
+  const base = entries().where('memberId', '==', memberId).select('date', 'totals')
+  let rows: Pick<FoodEntryDoc, 'date' | 'totals'>[]
+  try {
+    rows = (await base.where('date', '>=', from).where('date', '<=', to).get()).docs.map((d) => d.data() as Pick<FoodEntryDoc, 'date' | 'totals'>)
+  } catch (err) {
+    if (!isMissingIndexError(err)) throw err
+    warnIndex()
+    rows = (await base.get()).docs.map((d) => d.data() as Pick<FoodEntryDoc, 'date' | 'totals'>).filter((r) => r.date >= from && r.date <= to)
+  }
   const byDay = new Map<string, { totals: Macros; meals: number }>()
-  for (const e of list) {
+  for (const e of rows) {
     const day = byDay.get(e.date) ?? { totals: { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 }, meals: 0 }
     day.totals = sumMacros([day.totals, e.totals])
     day.meals++

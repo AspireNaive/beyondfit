@@ -123,6 +123,9 @@ export type NewPersonInput = {
   readonly assignedCoachId?: UserId | null
   readonly specialties?: readonly string[] | null
   readonly credentials?: readonly string[] | null
+  /** Coaches only: what they can be booked for and their hourly rate (minor units). */
+  readonly discipline?: string | null
+  readonly sessionRateMinor?: number | null
   /** App managers may pick the studio; admins always add to their own. */
   readonly tenantId?: TenantId | null
 }

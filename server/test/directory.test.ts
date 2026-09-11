@@ -18,8 +18,9 @@ describe('directory', () => {
     expect(members.some((m: { assignedCoachId: string }) => m.assignedCoachId === 'u-coach-mara')).toBe(true)
     expect(members.some((m: { assignedCoachId: string }) => m.assignedCoachId !== 'u-coach-mara')).toBe(true)
     expect(res.body.filter((u: { role: string }) => u.role === 'coach').length).toBeGreaterThan(1)
-    // Still nothing from another studio, and no admins' private view.
+    // Still nothing from another studio, and no studio or platform staff.
     expect(res.body.every((u: { tenantId: string }) => u.tenantId === 't-ironworks')).toBe(true)
+    expect(res.body.every((u: { role: string }) => u.role === 'member' || u.role === 'coach')).toBe(true)
   })
 
   it('an admin sees the whole studio', async () => {

@@ -49,8 +49,12 @@ export const queryKeys = {
   post: (slug: string) => ['post', slug] as const,
   managedPosts: (viewerId: string) => ['managed-posts', viewerId] as const,
   nutritionCapabilities: () => ['nutrition-capabilities'] as const,
+  /** Prefixes, so a write can invalidate every range for one member. */
+  foodEntriesFor: (memberId: string) => ['food', memberId] as const,
+  foodTotalsFor: (memberId: string) => ['food-totals', memberId] as const,
   foodEntries: (memberId: string, from: string, to: string) => ['food', memberId, from, to] as const,
   foodTotals: (memberId: string, from: string, to: string) => ['food-totals', memberId, from, to] as const,
+  foodPhoto: (memberId: string, entryId: string) => ['food-photo', memberId, entryId] as const,
   dietPlan: (memberId: string) => ['diet-plan', memberId] as const,
   dietPlans: (memberId: string) => ['diet-plans', memberId] as const,
 } as const

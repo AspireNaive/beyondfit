@@ -74,6 +74,10 @@ describe('nutrition: food diary', () => {
     expect((await api().get('/api/members/u-member-1/food').set(auth(await tokenFor(ACCOUNTS.admin, 'admin')))).status).toBe(200)
     expect((await api().get('/api/members/u-member-1/food').set(auth(await tokenFor(ACCOUNTS.manager, 'admin')))).status).toBe(200)
     expect((await api().get('/api/members/u-member-1/food')).status).toBe(401)
+    // Reading is shared; writing the diary is the member's alone.
+    const coach = auth(await tokenFor(ACCOUNTS.coach, 'coach'))
+    expect((await api().post('/api/members/u-member-1/food').set(coach).send(meal())).status).toBe(403)
+    expect((await api().delete('/api/members/u-member-1/food/f-0-lunch').set(coach)).status).toBe(403)
   })
 
   it('validates meals', async () => {
@@ -163,6 +167,16 @@ describe('studio management: adding people and mapping coaches', () => {
 
     // Duplicate email is a conflict.
     expect((await api().post('/api/directory').set(admin).send({ role: 'member', firstName: 'Sam', lastName: 'Again', email: memberEmail })).status).toBe(409)
+
+    // A new coach is bookable straight away: a provider row with hours exists.
+    const provider = await api().get(`/api/providers/${coach.body.user.id}`)
+    expect(provider.status).toBe(200)
+    expect(provider.body?.discipline).toBe('coaching')
+
+    // An admin manages members and coaches, never the platform manager or a fellow admin.
+    expect((await api().patch('/api/directory/u-manager-1').set(admin).send({ status: 'suspended' })).status).toBe(403)
+    expect((await api().patch('/api/directory/u-admin-1').set(admin).send({ status: 'suspended' })).status).toBe(400)
+    expect((await api().get('/api/auth/me').set(auth(await tokenFor(ACCOUNTS.manager, 'admin')))).status).toBe(200)
   })
 
   it('coaches and members cannot add people; the manager can, in any studio', async () => {

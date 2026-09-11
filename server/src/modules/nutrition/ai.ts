@@ -4,6 +4,7 @@ import { config } from '../../config.js'
 import type { FoodAnalysis } from '../../domain.js'
 import { HttpError, badRequest } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
+import { sumMacros } from './repository.js'
 
 /**
  * Food-photo analysis with Claude. One vision request, structured output, and
@@ -99,7 +100,9 @@ export async function analyseFoodPhoto(photo: string, hint?: string): Promise<Fo
   try {
     response = await anthropic().messages.create({
       model: config.ai.model,
-      max_tokens: 4000,
+      // Adaptive thinking is on by default and shares this cap with the answer;
+      // low effort keeps a plate estimate quick, and the headroom keeps the JSON whole.
+      max_tokens: 16_000,
       system: SYSTEM,
       messages: [
         {
@@ -115,7 +118,7 @@ export async function analyseFoodPhoto(photo: string, hint?: string): Promise<Fo
           ],
         },
       ],
-      output_config: { format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
     })
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
@@ -132,6 +135,10 @@ export async function analyseFoodPhoto(photo: string, hint?: string): Promise<Fo
     throw err
   }
 
+  if (response.stop_reason === 'max_tokens') {
+    logger.warn({ usage: response.usage }, 'anthropic: analysis hit max_tokens')
+    throw new HttpError(502, 'Photo analysis ran long and was cut off. Try again, or log the meal manually.', { title: 'Bad Gateway', code: 'ai_failed' })
+  }
   const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text
   if (response.stop_reason === 'refusal' || !text) {
     throw new HttpError(422, 'The photo could not be analysed. Try a clearer picture of the food.', { code: 'ai_no_result' })
@@ -159,10 +166,7 @@ export async function analyseFoodPhoto(photo: string, hint?: string): Promise<Fo
   return {
     dishName: parsed.dishName.trim().slice(0, 120),
     items,
-    totals: items.reduce(
-      (t, i) => ({ calories: t.calories + i.calories, proteinG: t.proteinG + i.proteinG, carbsG: t.carbsG + i.carbsG, fatG: t.fatG + i.fatG }),
-      { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
-    ),
+    totals: sumMacros(items),
     confidence: parsed.confidence,
     notes: parsed.notes?.trim() || null,
     model: response.model,

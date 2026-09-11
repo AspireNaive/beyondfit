@@ -1,7 +1,8 @@
-import { Role, type UserProfile, type UserStatus } from '../../domain.js'
+import { CHANNELS, Role, type Discipline, type UserProfile, type UserStatus } from '../../domain.js'
 import { hashPassword } from '../../auth/password.js'
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js'
 import { newId, randomToken } from '../../lib/ids.js'
+import { insertProvider, setHours } from '../providers/repository.js'
 import { findDefaultCoach, findUserById, insertUser, listUsers, updateUser } from '../users/repository.js'
 import { findTenantById } from '../tenants/repository.js'
 
@@ -13,10 +14,16 @@ export async function listMapped(viewer: UserProfile): Promise<UserProfile[]> {
   switch (viewer.role) {
     case Role.Member:
       return withSelf(viewer, await listUsers({ tenantId: viewer.tenantId, role: Role.Coach }))
-    case Role.Coach:
+    case Role.Coach: {
       // Every member in the studio plus fellow coaches: a coach may need to
       // cover a colleague's client, and the UI flags who is assigned to whom.
-      return withSelf(viewer, await listUsers({ tenantId: viewer.tenantId }))
+      // Studio and platform staff are not part of a coach's directory.
+      const [members, coaches] = await Promise.all([
+        listUsers({ tenantId: viewer.tenantId, role: Role.Member }),
+        listUsers({ tenantId: viewer.tenantId, role: Role.Coach }),
+      ])
+      return withSelf(viewer, [...members, ...coaches.filter((c) => c.id !== viewer.id)])
+    }
     case Role.Admin:
       return withSelf(viewer, await listUsers({ tenantId: viewer.tenantId }))
     case Role.AppManager:
@@ -58,8 +65,35 @@ export type NewPerson = {
   assignedCoachId?: string | null
   specialties?: string[] | null
   credentials?: string[] | null
+  /** Coaches only: what they can be booked for, and the hourly session rate. */
+  discipline?: Discipline | null
+  sessionRateMinor?: number | null
   /** app_manager only: which studio. Admins always create in their own. */
   tenantId?: string | null
+}
+
+/** Typical hourly rates by discipline, in minor units — the seed's numbers. */
+const DEFAULT_RATE_MINOR: Record<Discipline, number> = {
+  coaching: 9500,
+  nutrition: 11000,
+  physiotherapy: 13500,
+  medical: 19500,
+  mental_performance: 12000,
+}
+
+/** Mon–Fri 07:00–19:00, Sat–Sun 07:00–14:00 until the coach edits their hours. */
+const DEFAULT_HOURS = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+  weekday,
+  startMinute: 7 * 60,
+  endMinute: weekday === 0 || weekday === 6 ? 14 * 60 : 19 * 60,
+}))
+
+/** Which roles a viewer may create or change: staff manage the people below them, never their peers or superiors. */
+const MANAGEABLE_ROLES: Record<Role, readonly Role[]> = {
+  [Role.Member]: [],
+  [Role.Coach]: [],
+  [Role.Admin]: [Role.Member, Role.Coach],
+  [Role.AppManager]: [Role.Member, Role.Coach, Role.Admin],
 }
 
 const canManagePeople = (viewer: UserProfile, tenantId: string) =>
@@ -110,6 +144,19 @@ export async function createPerson(viewer: UserProfile, input: NewPerson): Promi
     assignedCoachId,
     status: 'active',
   })
+  // A coach is also a bookable provider: give them a discipline, a rate and
+  // default hours so they appear in the specialist finder straight away.
+  if (input.role === 'coach') {
+    const discipline: Discipline = input.discipline ?? 'coaching'
+    await insertProvider({
+      userId: id,
+      discipline,
+      sessionRateMinor: input.sessionRateMinor ?? DEFAULT_RATE_MINOR[discipline],
+      channels: CHANNELS,
+    })
+    await setHours(id, DEFAULT_HOURS)
+  }
+
   const user = await findUserById(id)
   if (!user) throw new Error('Account could not be created.')
   return { user, temporaryPassword }
@@ -126,7 +173,10 @@ export async function updatePerson(viewer: UserProfile, userId: string, patch: P
   const target = await findUserById(userId)
   if (!target) throw notFound('Person not found.')
   if (!canManagePeople(viewer, target.tenantId)) throw forbidden()
+  // An admin manages members and coaches; platform staff also manage admins.
+  // Nobody manages a peer or a superior, so an admin cannot lock out the platform manager.
   if (target.id === viewer.id && patch.status && patch.status !== 'active') throw badRequest('You cannot suspend yourself.')
+  if (!MANAGEABLE_ROLES[viewer.role].includes(target.role)) throw forbidden('You can only manage members and coaches.')
 
   if (patch.assignedCoachId !== undefined) {
     if (target.role !== Role.Member) throw badRequest('Only members are assigned to a coach.')

@@ -138,12 +138,12 @@ Studio management (admin for their own studio, `app_manager` for any):
 
 | Method | Path | Auth | Purpose | Notes |
 |---|---|---|---|---|
-| POST | `/directory` | bearer, admin / app_manager | Add a member or coach | Body `{ role: member\|coach, firstName, lastName, email, phone?, title?, bio?, password?, assignedCoachId?, specialties?, credentials?, tenantId? (app_manager only) }` → 201 `{ user: UserProfile, temporaryPassword }`. Without `password` one is generated and returned **once**. Members default to the studio's head coach; a member seat must be free (409 `seats_full`). 409 `email_taken`; 400 `coach_not_found`. |
-| PATCH | `/directory/{userId}` | bearer, admin / app_manager | Map to a coach, change status | Body any of `{ assignedCoachId (coach in the same studio, or null), status (active\|invited\|suspended), title }` → 200 `UserProfile`. Only members take a coach. You cannot suspend yourself. |
+| POST | `/directory` | bearer, admin / app_manager | Add a member or coach | Body `{ role: member\|coach, firstName, lastName, email, phone?, title?, bio?, password?, assignedCoachId?, specialties?, credentials?, discipline? (coach; default coaching), sessionRateMinor? (coach; default per discipline), tenantId? (app_manager only) }` → 201 `{ user: UserProfile, temporaryPassword }`. Without `password` one is generated and returned **once**. Members default to the studio's head coach; a member seat must be free (409 `seats_full`). A coach also gets a provider row with default hours, so they are bookable at once. 409 `email_taken`; 400 `coach_not_found`. |
+| PATCH | `/directory/{userId}` | bearer, admin / app_manager | Map to a coach, change status | Body any of `{ assignedCoachId (coach in the same studio, or null), status (active\|invited\|suspended), title }` → 200 `UserProfile`. Only members take a coach. An admin manages members and coaches only; `app_manager` also manages admins; nobody manages a peer, and you cannot suspend yourself (403 / 400). |
 
 `GET /directory/mapped` for a **coach** now returns every member of the studio
 plus fellow coaches (the UI flags the coach's own clients), not only assigned
-members.
+members — and no studio or platform staff.
 
 ## Providers
 
@@ -184,8 +184,9 @@ member. Unknown member → 404; anyone else → 403.
 
 ## Nutrition
 
-Food diary and diet plans, under `/members/{memberId}`. Access follows the
-member-data rule above. Photo analysis uses Claude (server env
+Food diary and diet plans, under `/members/{memberId}`. Reads follow the
+member-data rule above; only the member writes to their own diary (coaches and
+staff get 403 on diary writes), and only coaches and staff write diet plans. Photo analysis uses Claude (server env
 `ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-opus-5`); without
 a key the diary works with manual entry and `analyze` answers 503
 `ai_unavailable`. Photos travel as base64 data URLs (the client downsizes to
@@ -198,10 +199,10 @@ separate document so diary lists stay light; `thumbDataUrl` is the inline previe
 | POST | `/members/{memberId}/food/analyze` | bearer | Estimate a meal from a photo | Body `{ photo (data URL or base64 JPEG/PNG/WebP/GIF), hint? }` → `FoodAnalysis` `{ dishName, items[{ name, portion, calories, proteinG, carbsG, fatG }], totals, confidence (low\|medium\|high), notes, model }`. Nothing is saved. 503 `ai_unavailable`, 429 `ai_busy`, 502 `ai_failed`, 422 `ai_no_result`, 400 `unsupported_media` / `photo_too_large`. |
 | GET | `/members/{memberId}/food?from&to` | bearer | Diary | Dates `YYYY-MM-DD`, default last 14 days → `FoodEntry[]` newest first. |
 | GET | `/members/{memberId}/food/summary?from&to` | bearer | Calories per day | Default last 30 days → `[{ date, totals, meals }]` newest first. |
-| POST | `/members/{memberId}/food` | bearer | Log a meal | Body `{ date, mealType (breakfast\|lunch\|dinner\|snack), title, items (1–40), notes?, source?="manual", photoDataUrl?, thumbDataUrl? }` → 201 `FoodEntry`. `totals` are computed server-side; a photo sets `source: "photo"` and `hasPhoto`. |
+| POST | `/members/{memberId}/food` | bearer, the member | Log a meal | Body `{ date, mealType (breakfast\|lunch\|dinner\|snack), title, items (1–40), notes?, source?="manual", photoDataUrl?, thumbDataUrl? }` → 201 `FoodEntry`. `totals` are computed server-side; a photo sets `source: "photo"` and `hasPhoto`. |
 | GET | `/members/{memberId}/food/{entryId}/photo` | bearer | Full photo | → `{ dataUrl }`; 404 when none. |
-| PATCH | `/members/{memberId}/food/{entryId}` | bearer | Edit a meal | Any of `date, mealType, title, items, notes` → 200 `FoodEntry` (totals recomputed). |
-| DELETE | `/members/{memberId}/food/{entryId}` | bearer | Delete | → 204; removes the photo too. |
+| PATCH | `/members/{memberId}/food/{entryId}` | bearer, the member | Edit a meal | Any of `date, mealType, title, items, notes` → 200 `FoodEntry` (totals recomputed). |
+| DELETE | `/members/{memberId}/food/{entryId}` | bearer, the member | Delete | → 204; removes the photo too. |
 | GET | `/members/{memberId}/diet-plan` | bearer | Current plan | → `DietPlan` **or `null`**. |
 | GET | `/members/{memberId}/diet-plan/history` | bearer | Every plan | Active first, then newest → `DietPlan[]`. |
 | PUT | `/members/{memberId}/diet-plan` | bearer, coach / admin / app_manager | Write a plan | Body `{ title, summary?, targets { calories (800–10000), proteinG, carbsG, fatG }, meals[{ name, time?, description, calories? }] (1–12), guidelines[] (≤15) }` → 200 `DietPlan` with `status: "active"`; the previous active plan becomes `archived`. Members get 403. |

@@ -14,8 +14,9 @@ import * as repo from './repository.js'
 /**
  * Food diary and diet plans, mounted under /members/:memberId. Who may read
  * follows the progress rules (the member, coaches in their studio, the studio
- * admin, platform staff). Members log their own food; diet plans are written
- * by coaches and staff, never by the member.
+ * admin, platform staff). Only the member writes to their own diary — a diary
+ * is their record, not their coach's — while diet plans are written by
+ * coaches and staff, never by the member.
  */
 export const nutritionRouter = Router()
 nutritionRouter.use(requireAuth)
@@ -59,6 +60,11 @@ const entryBody = z.object({
 
 const range = z.object({ from: isoDate.optional(), to: isoDate.optional() })
 
+/** Diary writes are the member's alone; readers with access may still analyse a photo. */
+function assertOwnDiary(viewerId: string, memberId: string) {
+  if (viewerId !== memberId) throw forbidden('Only the member can change their own food diary.')
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
 
@@ -92,7 +98,9 @@ memberNutritionRouter.get(
 memberNutritionRouter.post(
   '/:memberId/food',
   route({ params: memberParams, body: entryBody }, async ({ params, body, req, res }) => {
-    const member = await assertProgressAccess(currentUser(req), params.memberId)
+    const user = currentUser(req)
+    assertOwnDiary(user.id, params.memberId)
+    const member = await assertProgressAccess(user, params.memberId)
     const id = newId()
     await repo.insertFoodEntry({
       id,
@@ -127,7 +135,7 @@ memberNutritionRouter.patch(
   route(
     { params: entryParams, body: entryBody.pick({ date: true, mealType: true, title: true, items: true, notes: true }).partial() },
     async ({ params, body, req }) => {
-      await assertProgressAccess(currentUser(req), params.memberId)
+      assertOwnDiary(currentUser(req).id, params.memberId)
       if (!(await repo.findFoodEntry(params.memberId, params.entryId))) throw notFound('Meal not found.')
       await repo.updateFoodEntry(params.entryId, body)
       return repo.findFoodEntry(params.memberId, params.entryId)
@@ -138,7 +146,7 @@ memberNutritionRouter.patch(
 memberNutritionRouter.delete(
   '/:memberId/food/:entryId',
   route({ params: entryParams }, async ({ params, req }) => {
-    await assertProgressAccess(currentUser(req), params.memberId)
+    assertOwnDiary(currentUser(req).id, params.memberId)
     if (!(await repo.findFoodEntry(params.memberId, params.entryId))) throw notFound('Meal not found.')
     await repo.deleteFoodEntry(params.entryId)
   }),

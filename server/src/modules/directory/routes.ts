@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { currentUser, requireAuth, requireRole } from '../../auth/middleware.js'
-import { ROLES, Role, USER_STATUSES } from '../../domain.js'
+import { DISCIPLINES, ROLES, Role, USER_STATUSES } from '../../domain.js'
 import { route } from '../../lib/handler.js'
 import * as directory from './service.js'
 
@@ -40,6 +40,8 @@ const personBody = z.object({
   assignedCoachId: z.string().min(1).nullable().optional(),
   specialties: z.array(z.string().trim().min(1).max(60)).max(10).nullable().optional(),
   credentials: z.array(z.string().trim().min(1).max(60)).max(10).nullable().optional(),
+  discipline: z.enum(DISCIPLINES).nullable().optional(),
+  sessionRateMinor: z.number().int().min(0).max(1_000_000).nullable().optional(),
   tenantId: z.string().min(1).nullable().optional(),
 })
 

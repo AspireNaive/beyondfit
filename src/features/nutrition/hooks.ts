@@ -51,8 +51,8 @@ export function useDietPlanHistory(memberId: string | undefined) {
 function useInvalidateFood(memberId: string | undefined) {
   const queryClient = useQueryClient()
   return () => {
-    void queryClient.invalidateQueries({ queryKey: ['food', memberId ?? ''] })
-    void queryClient.invalidateQueries({ queryKey: ['food-totals', memberId ?? ''] })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.foodEntriesFor(memberId ?? '') })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.foodTotalsFor(memberId ?? '') })
   }
 }
 
@@ -90,7 +90,7 @@ export function useDeleteFood(memberId: string | undefined) {
 
 export function useFoodPhoto(memberId: string | undefined, entryId: FoodEntryId | null) {
   return useQuery({
-    queryKey: ['food-photo', memberId ?? '', entryId ?? ''],
+    queryKey: queryKeys.foodPhoto(memberId ?? '', entryId ?? ''),
     queryFn: () => container.nutrition.getFoodPhoto(memberId as UserId, entryId!),
     enabled: Boolean(memberId && entryId),
     staleTime: Infinity,
