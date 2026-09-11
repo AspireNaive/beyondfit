@@ -79,12 +79,16 @@ export function LogMealDialog({
   const [photo, setPhoto] = useState<PreparedPhoto | null>(null)
   const [analysis, setAnalysis] = useState<FoodAnalysis | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   // Reset for each opening; hydrate when editing.
   useEffect(() => {
     if (!open) return
     setError(null)
+    setPhotoError(null)
+    setPreparing(false)
     setAnalysis(null)
     setPhoto(null)
     setHint('')
@@ -112,13 +116,17 @@ export function LogMealDialog({
   const onPickFile = async (file: File | undefined) => {
     if (!file) return
     setError(null)
+    setPhotoError(null)
+    setPreparing(true)
     try {
       const prepared = await preparePhoto(file)
       setPhoto(prepared)
       setAnalysis(null)
       if (photoAnalysis && !quotaReached) void runAnalysis(prepared)
     } catch (e) {
-      setError((e as Error).message)
+      setPhotoError((e as Error).message)
+    } finally {
+      setPreparing(false)
     }
   }
 
@@ -250,6 +258,11 @@ export function LogMealDialog({
                       <X className="size-4" /> Remove
                     </Button>
                   </div>
+                  {photoError && (
+                    <p role="alert" className="rounded-lg border border-danger-500/35 bg-danger-500/10 px-3 py-2 text-xs text-danger-500">
+                      {photoError}
+                    </p>
+                  )}
                   {photoAnalysis && (
                     <Input
                       value={hint}
@@ -281,9 +294,14 @@ export function LogMealDialog({
                     </p>
                   )}
                 </div>
-                <Button size="sm" onClick={() => fileInput.current?.click()}>
-                  <ImagePlus className="size-4" /> Take or choose a photo
+                <Button size="sm" loading={preparing} onClick={() => fileInput.current?.click()}>
+                  <ImagePlus className="size-4" /> {preparing ? 'Preparing photo…' : 'Take or choose a photo'}
                 </Button>
+                {photoError && (
+                  <p role="alert" className="max-w-md rounded-lg border border-danger-500/35 bg-danger-500/10 px-3 py-2 text-xs text-danger-500">
+                    {photoError}
+                  </p>
+                )}
               </div>
             )}
           </section>
