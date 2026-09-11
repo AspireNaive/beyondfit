@@ -105,6 +105,8 @@ export function LogMealDialog({
 
   const totals = useMemo(() => sumMacros(items.filter((i) => i.name.trim()).map(toFood)), [items])
   const photoAnalysis = caps.data?.photoAnalysis ?? false
+  const remaining = caps.data?.remainingToday ?? 0
+  const quotaReached = photoAnalysis && caps.data !== undefined && remaining <= 0
   const saving = log.isPending || update.isPending
 
   const onPickFile = async (file: File | undefined) => {
@@ -114,7 +116,7 @@ export function LogMealDialog({
       const prepared = await preparePhoto(file)
       setPhoto(prepared)
       setAnalysis(null)
-      if (photoAnalysis) void runAnalysis(prepared)
+      if (photoAnalysis && !quotaReached) void runAnalysis(prepared)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -213,6 +215,10 @@ export function LogMealDialog({
                         Estimates from a photo are a starting point. Check the portions below and correct anything that looks off.
                       </p>
                     </div>
+                  ) : quotaReached ? (
+                    <p className="text-sm text-chalk-dim">
+                      Photo attached. You have used today's {caps.data?.dailyLimit} photo analyses — type the foods in below, and analysis is back tomorrow.
+                    </p>
                   ) : photoAnalysis ? (
                     <p className="text-sm text-chalk-dim">Photo attached. Analyse it to fill in the foods, or type them in below.</p>
                   ) : (
@@ -222,9 +228,20 @@ export function LogMealDialog({
                   )}
                   <div className="flex flex-wrap items-center gap-2">
                     {photoAnalysis && (
-                      <Button size="sm" variant={analysis ? 'outline' : 'primary'} loading={analyze.isPending} onClick={() => void runAnalysis()}>
+                      <Button
+                        size="sm"
+                        variant={analysis ? 'outline' : 'primary'}
+                        loading={analyze.isPending}
+                        disabled={quotaReached}
+                        onClick={() => void runAnalysis()}
+                      >
                         <Sparkles className="size-4" /> {analysis ? 'Analyse again' : 'Analyse photo'}
                       </Button>
+                    )}
+                    {photoAnalysis && caps.data && (
+                      <span className="text-xs tabular-nums text-chalk-faint">
+                        {remaining} of {caps.data.dailyLimit} analyses left today
+                      </span>
                     )}
                     <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()}>
                       <ImagePlus className="size-4" /> Change photo
@@ -252,10 +269,17 @@ export function LogMealDialog({
                 <div>
                   <p className="text-sm font-semibold text-chalk">Snap your plate</p>
                   <p className="mt-1 max-w-sm text-xs text-chalk-dim">
-                    {photoAnalysis
-                      ? 'We will identify the foods and estimate calories and macros. You can correct anything before saving.'
-                      : 'Attach a photo for your diary, then type in what you ate.'}
+                    {quotaReached
+                      ? `You have used today's ${caps.data?.dailyLimit} photo analyses. Attach a photo for your diary and type in what you ate; analysis is back tomorrow.`
+                      : photoAnalysis
+                        ? 'We will identify the foods and estimate calories and macros. You can correct anything before saving.'
+                        : 'Attach a photo for your diary, then type in what you ate.'}
                   </p>
+                  {photoAnalysis && caps.data && !quotaReached && (
+                    <p className="mt-1 text-[11px] tabular-nums text-chalk-faint">
+                      {remaining} of {caps.data.dailyLimit} analyses left today
+                    </p>
+                  )}
                 </div>
                 <Button size="sm" onClick={() => fileInput.current?.click()}>
                   <ImagePlus className="size-4" /> Take or choose a photo

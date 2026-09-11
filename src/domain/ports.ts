@@ -6,6 +6,7 @@ import type {
   RegisterRequest,
   Role,
   Tenant,
+  TenantPatch,
   UserProfile,
 } from '@/domain/identity/model'
 import type {
@@ -134,6 +135,8 @@ export interface PaymentsPort {
 export interface TenantPort {
   getTenant(): Promise<Tenant>
   listTenants(): Promise<readonly Tenant[]>
+  /** Admin: name, colour and nutrition settings of their own studio; app manager: any. */
+  updateTenant(id: Tenant['id'], patch: TenantPatch): Promise<Tenant>
 }
 
 export type ContactMessage = {

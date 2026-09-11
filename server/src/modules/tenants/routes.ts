@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { currentUser, requireAuth, requirePermission } from '../../auth/middleware.js'
-import { Permission, TENANT_PLANS, can } from '../../domain.js'
+import { PHOTO_ANALYSIS_MODELS, Permission, TENANT_PLANS, can } from '../../domain.js'
 import { conflict, forbidden, notFound } from '../../lib/errors.js'
 import { route } from '../../lib/handler.js'
 import { newId } from '../../lib/ids.js'
@@ -33,6 +33,13 @@ const tenantBody = z.object({
   plan: z.enum(TENANT_PLANS).default('starter'),
   seats: z.number().int().positive().max(1_000_000).default(100),
   primaryColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  /** Food-photo analysis: which model, and how many analyses per member per day (0 = off). null = platform default. */
+  nutrition: z
+    .object({
+      model: z.enum(PHOTO_ANALYSIS_MODELS).nullable().optional(),
+      dailyPhotoLimit: z.number().int().min(0).max(1000).nullable().optional(),
+    })
+    .optional(),
 })
 
 tenantsRouter.get(
@@ -64,7 +71,10 @@ tenantsRouter.patch(
         throw forbidden()
       }
       // Plan and seat changes are commercial decisions: platform staff only.
-      const patch = can(user.role, Permission.ManagePlatform) ? body : { name: body.name, primaryColor: body.primaryColor }
+      // A studio admin may rename, recolour and tune their own nutrition settings.
+      const patch = can(user.role, Permission.ManagePlatform)
+        ? body
+        : { name: body.name, primaryColor: body.primaryColor, nutrition: body.nutrition }
       if (!(await findTenantById(params.tenantId))) throw notFound('Studio not found.')
       await updateTenant(params.tenantId, patch)
       return findTenantById(params.tenantId)

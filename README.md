@@ -69,9 +69,14 @@ coaches from *People → Add a person* (a temporary password is shown once) and
 map a member to a coach from the member's profile. Coaches see every member
 in their studio, with their own clients flagged.
 
-Photo analysis needs `ANTHROPIC_API_KEY` on the API host (`ANTHROPIC_MODEL`
-defaults to `claude-opus-5`). Without it the diary still works with manual
-entry and the app says analysis is off. Photos are downsized in the browser
+Photo analysis needs `ANTHROPIC_API_KEY` on the API host. Each studio admin
+chooses, from their dashboard, which model reads the plates (Opus 5 for the
+most accurate portions, Sonnet 5 or Haiku 4.5 to spend less) and a **cap on
+photo analyses per member per day**; blank falls back to the platform
+defaults `ANTHROPIC_MODEL` (`claude-opus-5`) and `PHOTO_ANALYSIS_DAILY_LIMIT`
+(10), and a cap of 0 switches analysis off for that studio. Members see how
+many analyses they have left today in the log-meal dialog. Without a key the
+diary still works with manual entry and the app says analysis is off. Photos are downsized in the browser
 (~1024 px) and stored in Firestore next to the entry; no extra storage bucket
 is needed.
 

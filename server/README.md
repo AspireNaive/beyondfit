@@ -132,6 +132,7 @@ FIREBASE_SERVICE_ACCOUNT=<base64 of the service-account key: base64 -i key.json 
 JWT_SECRET=<48 random bytes>
 APP_URL=https://kedemlife.com
 ANTHROPIC_API_KEY=<optional: enables calorie estimates from food photos>
+PHOTO_ANALYSIS_DAILY_LIMIT=10   # optional platform default cap per member per day; studios override it
 ```
 
 Add them **before** merging a change that touches `start`: the API exits at

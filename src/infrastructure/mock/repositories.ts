@@ -7,6 +7,7 @@ import {
   type PersonPatch,
   type RegisterRequest,
   type Tenant,
+  type TenantPatch,
   type UserProfile,
 } from '@/domain/identity/model'
 import {
@@ -103,6 +104,7 @@ const appointments: Appointment[] = [...APPOINTMENTS]
 const orders: Order[] = [...ORDERS]
 const bodyMetrics: BodyMetricEntry[] = [...BODY_METRICS]
 const users: UserProfile[] = [...USERS]
+const tenants: Tenant[] = [...TENANTS]
 const posts: Post[] = [...POSTS]
 const foodEntries: FoodEntry[] = [...FOOD_ENTRIES]
 const foodPhotos = new Map<string, string>()
@@ -125,7 +127,7 @@ const PORTAL_ACCEPTS: Record<Role, readonly Role[]> = {
 }
 
 const tenantOf = (user: UserProfile): Tenant =>
-  TENANTS.find((t) => t.id === user.tenantId) ?? DEFAULT_TENANT
+  tenants.find((t) => t.id === user.tenantId) ?? DEFAULT_TENANT
 
 function issueSession(user: UserProfile): AuthSession {
   const expiresAt = new Date(Date.now() + 8 * 3_600_000).toISOString()
@@ -597,10 +599,28 @@ class MockMarketing implements MarketingPort {
 
 class MockTenants implements TenantPort {
   async getTenant(): Promise<Tenant> {
-    return delay(DEFAULT_TENANT, 120)
+    return delay(tenants[0] ?? DEFAULT_TENANT, 120)
   }
   async listTenants(): Promise<readonly Tenant[]> {
-    return delay(TENANTS)
+    return delay(tenants)
+  }
+  async updateTenant(tenantId: Tenant['id'], patch: TenantPatch): Promise<Tenant> {
+    await delay(null, 320)
+    const index = tenants.findIndex((t) => t.id === tenantId)
+    if (index === -1) throw new Error('Studio not found.')
+    const current = tenants[index]!
+    const updated: Tenant = {
+      ...current,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.primaryColor !== undefined ? { primaryColor: patch.primaryColor ?? undefined } : {}),
+      nutrition: {
+        model: patch.nutrition?.model !== undefined ? patch.nutrition.model : (current.nutrition?.model ?? null),
+        dailyPhotoLimit:
+          patch.nutrition?.dailyPhotoLimit !== undefined ? patch.nutrition.dailyPhotoLimit : (current.nutrition?.dailyPhotoLimit ?? null),
+      },
+    }
+    tenants[index] = updated
+    return updated
   }
 }
 
@@ -724,12 +744,34 @@ const MOCK_ANALYSIS: FoodAnalysis['items'] = [
   { name: 'Wholegrain bread', portion: '1 slice', calories: 80, proteinG: 4, carbsG: 14, fatG: 1 },
 ]
 
+const analysesToday = new Map<string, number>()
+const MOCK_DEFAULT_LIMIT = 10
+
 class MockNutrition implements NutritionPort {
   async capabilities(): Promise<NutritionCapabilities> {
-    return delay({ photoAnalysis: true, model: 'mock' }, 60)
+    const tenant = tenants[0] ?? DEFAULT_TENANT
+    const dailyLimit = tenant.nutrition?.dailyPhotoLimit ?? MOCK_DEFAULT_LIMIT
+    const usedToday = analysesToday.get(`${today()}`) ?? 0
+    return delay(
+      {
+        photoAnalysis: dailyLimit > 0,
+        model: dailyLimit > 0 ? (tenant.nutrition?.model ?? 'mock') : null,
+        dailyLimit,
+        usedToday,
+        remainingToday: Math.max(0, dailyLimit - usedToday),
+      },
+      60,
+    )
   }
 
   async analyzeFoodPhoto(_memberId: UserId, _photo: string, hint?: string): Promise<FoodAnalysis> {
+    const tenant = tenants[0] ?? DEFAULT_TENANT
+    const dailyLimit = tenant.nutrition?.dailyPhotoLimit ?? MOCK_DEFAULT_LIMIT
+    const used = analysesToday.get(today()) ?? 0
+    if (used >= dailyLimit) {
+      throw new Error(`That is ${dailyLimit} photo analyses today — the daily limit. You can still log meals manually until tomorrow.`)
+    }
+    analysesToday.set(today(), used + 1)
     await delay(null, 1400)
     return {
       dishName: hint?.trim() || 'Chicken salad plate',

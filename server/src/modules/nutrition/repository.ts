@@ -172,6 +172,42 @@ export async function dailyTotals(memberId: string, from: string, to: string): P
   return [...byDay.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date))
 }
 
+// ---- Photo-analysis quota --------------------------------------------------------
+
+const quota = () => db.collection(col.analysisQuota)
+const quotaId = (memberId: string, date: string) => `${memberId}_${date}`
+
+/** Analyses a member has used on a day (UTC). */
+export async function analysesUsed(memberId: string, date: string): Promise<number> {
+  const row = docOf<{ used: number }>(await quota().doc(quotaId(memberId, date)).get())
+  return row?.used ?? 0
+}
+
+/**
+ * Take one analysis from the member's daily allowance, atomically. Returns
+ * false when the day's cap is already reached, so two photos sent at the
+ * same instant cannot both slip through the last slot.
+ */
+export async function reserveAnalysis(memberId: string, date: string, limit: number): Promise<boolean> {
+  if (limit <= 0) return false
+  const ref = quota().doc(quotaId(memberId, date))
+  return runTransaction(async (tx) => {
+    const used = docOf<{ used: number }>(await tx.get(ref))?.used ?? 0
+    if (used >= limit) return false
+    tx.set(ref, { memberId, date, used: used + 1, updatedAt: Ts.now() }, { merge: true })
+    return true
+  })
+}
+
+/** Give a reserved analysis back when the model call itself failed. */
+export async function releaseAnalysis(memberId: string, date: string): Promise<void> {
+  const ref = quota().doc(quotaId(memberId, date))
+  await runTransaction(async (tx) => {
+    const used = docOf<{ used: number }>(await tx.get(ref))?.used ?? 0
+    if (used > 0) tx.update(ref, { used: used - 1, updatedAt: Ts.now() })
+  })
+}
+
 // ---- Diet plans ------------------------------------------------------------------
 
 export type DietPlanDoc = {

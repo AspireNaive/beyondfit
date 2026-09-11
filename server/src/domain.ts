@@ -133,6 +133,17 @@ export type UserProfile = {
   status: UserStatus
 }
 
+/** Models a studio may pick for food-photo analysis, most accurate first. */
+export const PHOTO_ANALYSIS_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const
+export type PhotoAnalysisModel = (typeof PHOTO_ANALYSIS_MODELS)[number]
+
+/** Per-studio nutrition settings; null means "use the platform default". */
+export type TenantNutritionSettings = {
+  model: PhotoAnalysisModel | null
+  /** Photo analyses per member per day; 0 switches the feature off for the studio. */
+  dailyPhotoLimit: number | null
+}
+
 export type Tenant = {
   id: string
   name: string
@@ -142,6 +153,7 @@ export type Tenant = {
   seatsUsed: number
   createdAt: string
   primaryColor?: string
+  nutrition: TenantNutritionSettings
 }
 
 export type AuthSession = {
