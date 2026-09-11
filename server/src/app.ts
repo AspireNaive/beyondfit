@@ -29,13 +29,17 @@ import { openApiDocument } from './openapi.js'
  */
 const CSP_DIRECTIVES = {
   defaultSrc: ["'self'"],
-  scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+  // 'wasm-unsafe-eval' lets the in-browser HEIC decoder (iPhone photos) run its
+  // WebAssembly; it does not permit JavaScript eval.
+  scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'https://cdn.jsdelivr.net'],
   styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
   fontSrc: ["'self'", 'https://fonts.gstatic.com'],
   // Blog authors link images and videos from wherever they host them.
   imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
   mediaSrc: ["'self'", 'https:'],
   frameSrc: ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+  // The HEIC decoder also runs its work in a worker built from a blob: URL.
+  workerSrc: ["'self'", 'blob:'],
   connectSrc: ["'self'"],
   frameAncestors: ["'none'"],
   baseUri: ["'self'"],

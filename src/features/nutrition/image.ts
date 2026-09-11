@@ -16,7 +16,7 @@ type Drawable = ImageBitmap | HTMLImageElement
 const sizeOf = (img: Drawable) =>
   'naturalWidth' in img ? { width: img.naturalWidth, height: img.naturalHeight } : { width: img.width, height: img.height }
 
-async function loadImage(file: File): Promise<Drawable> {
+async function loadImage(file: Blob): Promise<Drawable> {
   if (typeof createImageBitmap === 'function') {
     try {
       return await createImageBitmap(file, { imageOrientation: 'from-image' })
@@ -52,9 +52,46 @@ function draw(img: Drawable, maxEdge: number, quality: number): string {
   return canvas.toDataURL('image/jpeg', quality)
 }
 
+/** iPhone photos arrive as HEIC, which Chrome, Edge and most Android browsers cannot decode. */
+const isHeic = (file: File) =>
+  /^image\/hei[cf]$/i.test(file.type) || (!file.type && /\.hei[cf]$/i.test(file.name)) || /\.hei[cf]$/i.test(file.name)
+
+/**
+ * Convert HEIC to JPEG in the browser with libheif compiled to WebAssembly.
+ * The decoder is a few megabytes, so it is loaded only when someone actually
+ * picks a HEIC file. The `csp` build avoids eval; the site's policy allows
+ * WebAssembly with 'wasm-unsafe-eval'. Safari decodes HEIC natively and only
+ * gets here if the native path fails.
+ */
+async function heicToJpeg(file: File): Promise<Blob> {
+  const { heicTo } = await import('heic-to/csp')
+  const timeout = new Promise<never>((_, reject) =>
+    window.setTimeout(() => reject(new Error('HEIC conversion timed out.')), 45_000),
+  )
+  return Promise.race([heicTo({ blob: file, type: 'image/jpeg', quality: 0.9 }), timeout])
+}
+
 export async function preparePhoto(file: File): Promise<PreparedPhoto> {
-  if (!file.type.startsWith('image/')) throw new Error('Choose a photo (JPEG, PNG, HEIC or WebP).')
-  const img = await loadImage(file)
+  if (!file.type.startsWith('image/') && !isHeic(file)) throw new Error('Choose a photo (JPEG, PNG, HEIC or WebP).')
+  let source: Blob = file
+  if (isHeic(file)) {
+    try {
+      // Try the browser first (Safari), then the bundled decoder.
+      const img = await loadImage(file)
+      return finish(img)
+    } catch {
+      try {
+        source = await heicToJpeg(file)
+      } catch {
+        throw new Error('This HEIC photo could not be converted. On iPhone, Settings → Camera → Formats → “Most Compatible” saves JPEGs instead.')
+      }
+    }
+  }
+  const img = await loadImage(source)
+  return finish(img)
+}
+
+function finish(img: Drawable): PreparedPhoto {
   const prepared = { photoDataUrl: draw(img, 1024, 0.82), thumbDataUrl: draw(img, 240, 0.7) }
   if ('close' in img) img.close()
   return prepared
