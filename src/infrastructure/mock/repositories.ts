@@ -745,7 +745,7 @@ const MOCK_ANALYSIS: FoodAnalysis['items'] = [
 ]
 
 const analysesToday = new Map<string, number>()
-const MOCK_DEFAULT_LIMIT = 10
+const MOCK_DEFAULT_LIMIT = 5
 
 class MockNutrition implements NutritionPort {
   async capabilities(): Promise<NutritionCapabilities> {
