@@ -3,9 +3,10 @@ import { z } from 'zod'
 import { currentUser, requireAuth } from '../../auth/middleware.js'
 import { config } from '../../config.js'
 import { MEAL_TYPES, Role } from '../../domain.js'
-import { forbidden, notFound } from '../../lib/errors.js'
+import { HttpError, forbidden, notFound } from '../../lib/errors.js'
 import { route } from '../../lib/handler.js'
 import { newId } from '../../lib/ids.js'
+import { findTenantById } from '../tenants/repository.js'
 import { fullName } from '../users/repository.js'
 import { assertProgressAccess } from '../progress/service.js'
 import { analyseFoodPhoto } from './ai.js'
@@ -21,10 +22,34 @@ import * as repo from './repository.js'
 export const nutritionRouter = Router()
 nutritionRouter.use(requireAuth)
 
-/** GET /nutrition/capabilities — whether photo analysis is switched on. */
+/** The studio's effective analysis settings: its own overrides, else the platform defaults. */
+async function analysisSettings(tenantId: string): Promise<{ model: string; dailyLimit: number }> {
+  const tenant = await findTenantById(tenantId)
+  return {
+    model: tenant?.nutrition.model ?? config.ai.model,
+    dailyLimit: tenant?.nutrition.dailyPhotoLimit ?? config.ai.dailyLimit,
+  }
+}
+
+/**
+ * GET /nutrition/capabilities — whether photo analysis is on for the caller's
+ * studio, with which model, and how much of today's allowance they have left.
+ */
 nutritionRouter.get(
   '/capabilities',
-  route({}, () => ({ photoAnalysis: config.ai.enabled, model: config.ai.enabled ? config.ai.model : null })),
+  route({}, async ({ req }) => {
+    const user = currentUser(req)
+    const settings = await analysisSettings(user.tenantId)
+    const enabled = config.ai.enabled && settings.dailyLimit > 0
+    const usedToday = user.role === Role.Member ? await repo.analysesUsed(user.id, today()) : 0
+    return {
+      photoAnalysis: enabled,
+      model: enabled ? settings.model : null,
+      dailyLimit: settings.dailyLimit,
+      usedToday,
+      remainingToday: Math.max(0, settings.dailyLimit - usedToday),
+    }
+  }),
 )
 
 export const memberNutritionRouter = Router()
@@ -68,12 +93,34 @@ function assertOwnDiary(viewerId: string, memberId: string) {
 const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
 
-/** POST /members/:memberId/food/analyze — estimate a meal from a photo; nothing is saved. */
+/**
+ * POST /members/:memberId/food/analyze — estimate a meal from a photo; nothing
+ * is saved. Counts against the member's daily allowance (the studio's cap),
+ * and uses the studio's chosen model.
+ */
 memberNutritionRouter.post(
   '/:memberId/food/analyze',
   route({ params: memberParams, body: z.object({ photo, hint: z.string().trim().max(300).optional() }) }, async ({ params, body, req }) => {
-    await assertProgressAccess(currentUser(req), params.memberId)
-    return analyseFoodPhoto(body.photo, body.hint)
+    const member = await assertProgressAccess(currentUser(req), params.memberId)
+    const settings = await analysisSettings(member.tenantId)
+    if (settings.dailyLimit <= 0) {
+      throw new HttpError(403, 'Photo analysis is switched off for this studio. Log the meal manually.', { code: 'ai_disabled' })
+    }
+    const day = today()
+    if (!(await repo.reserveAnalysis(member.id, day, settings.dailyLimit))) {
+      throw new HttpError(
+        429,
+        `That is ${settings.dailyLimit} photo analyses today — the daily limit. You can still log meals manually until tomorrow.`,
+        { title: 'Too Many Requests', code: 'ai_quota' },
+      )
+    }
+    try {
+      return await analyseFoodPhoto(body.photo, body.hint, settings.model)
+    } catch (err) {
+      // A failed call should not cost the member one of their analyses.
+      await repo.releaseAnalysis(member.id, day).catch(() => {})
+      throw err
+    }
   }),
 )
 

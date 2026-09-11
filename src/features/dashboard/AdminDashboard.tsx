@@ -14,6 +14,7 @@ import { Stat } from '@/shared/ui/Stat'
 import { Skeleton } from '@/shared/ui/Feedback'
 import { useCurrentUser, useTenant } from '@/features/auth/store'
 import { useMappedProfiles } from '@/features/profiles/hooks'
+import { NutritionSettingsCard } from './NutritionSettingsCard'
 import { useAppointments } from '@/features/booking/hooks'
 import { usePayments, useSubscriptions } from '@/features/payments/hooks'
 
@@ -291,6 +292,12 @@ export default function AdminDashboard() {
           </Card>
         </div>
       </div>
+
+      {tenant && (
+        <div className="mt-8">
+          <NutritionSettingsCard tenant={tenant} />
+        </div>
+      )}
     </>
   )
 }

@@ -48,7 +48,7 @@ end can render its own empty state; they are flagged in the tables.
 - `code` appears only for specific failures: `invalid_credentials`,
   `wrong_portal`, `suspended`, `email_taken`, `seats_full`, `reset_invalid`,
   `out_of_stock`, `payment_failed`, `already_subscribed`, `slug_taken`, `coach_not_found`,
-  `ai_unavailable`, `ai_busy`, `ai_failed`, `ai_no_result`, `unsupported_media`, `photo_too_large`, `validation`.
+  `ai_unavailable`, `ai_busy`, `ai_failed`, `ai_no_result`, `ai_quota`, `ai_disabled`, `unsupported_media`, `photo_too_large`, `validation`.
 - `errors` maps a dotted field path (or `_`) to messages. It is present on
   every 422 schema failure and on some 422 business-rule failures.
 - Schema validation (zod) is 422. Malformed JSON is 400. A duplicate key (email, product slug, booking slot) is 409.
@@ -195,8 +195,8 @@ separate document so diary lists stay light; `thumbDataUrl` is the inline previe
 
 | Method | Path | Auth | Purpose | Notes |
 |---|---|---|---|---|
-| GET | `/nutrition/capabilities` | bearer | Is photo analysis on? | → `{ photoAnalysis, model }`. |
-| POST | `/members/{memberId}/food/analyze` | bearer | Estimate a meal from a photo | Body `{ photo (data URL or base64 JPEG/PNG/WebP/GIF), hint? }` → `FoodAnalysis` `{ dishName, items[{ name, portion, calories, proteinG, carbsG, fatG }], totals, confidence (low\|medium\|high), notes, model }`. Nothing is saved. 503 `ai_unavailable`, 429 `ai_busy`, 502 `ai_failed`, 422 `ai_no_result`, 400 `unsupported_media` / `photo_too_large`. |
+| GET | `/nutrition/capabilities` | bearer | Is photo analysis on, and how much is left today? | → `{ photoAnalysis, model, dailyLimit, usedToday, remainingToday }` for the caller's studio; `usedToday` counts the caller's own analyses (0 for staff). |
+| POST | `/members/{memberId}/food/analyze` | bearer | Estimate a meal from a photo | Body `{ photo (data URL or base64 JPEG/PNG/WebP/GIF), hint? }` → `FoodAnalysis` `{ dishName, items[{ name, portion, calories, proteinG, carbsG, fatG }], totals, confidence (low\|medium\|high), notes, model }`. Nothing is saved. Uses the studio's model and counts against the member's daily cap. 429 `ai_quota` (cap reached), 403 `ai_disabled` (cap is 0), 503 `ai_unavailable`, 429 `ai_busy`, 502 `ai_failed`, 422 `ai_no_result`, 400 `unsupported_media` / `photo_too_large`. |
 | GET | `/members/{memberId}/food?from&to` | bearer | Diary | Dates `YYYY-MM-DD`, default last 14 days → `FoodEntry[]` newest first. |
 | GET | `/members/{memberId}/food/summary?from&to` | bearer | Calories per day | Default last 30 days → `[{ date, totals, meals }]` newest first. |
 | POST | `/members/{memberId}/food` | bearer, the member | Log a meal | Body `{ date, mealType (breakfast\|lunch\|dinner\|snack), title, items (1–40), notes?, source?="manual", photoDataUrl?, thumbDataUrl? }` → 201 `FoodEntry`. `totals` are computed server-side; a photo sets `source: "photo"` and `hasPhoto`. |
@@ -277,7 +277,7 @@ All routes require a bearer token.
 | GET | `/tenant` | bearer | My studio | Any role → 200 `Tenant` (`seatsUsed` is the live count of active members). 404 if gone. |
 | GET | `/tenants` | bearer, `platform:write` | All studios | app_manager only → `Tenant[]`. |
 | POST | `/tenants` | bearer, `platform:write` | Create a studio | Body `{ name, slug, plan?="starter", seats?=100, primaryColor? }` → 201 `Tenant`. 409 if the slug exists. |
-| PATCH | `/tenants/{tenantId}` | bearer | Update a studio | Body any of `name, plan, seats, primaryColor` (slug is immutable). app_manager: any studio, every field. admin: own studio only, and `plan`/`seats` are silently dropped. Everyone else 403. 404 unknown. |
+| PATCH | `/tenants/{tenantId}` | bearer | Update a studio | Body any of `name, plan, seats, primaryColor, nutrition { model?, dailyPhotoLimit? }` (slug is immutable). app_manager: any studio, every field. admin: own studio only, and `plan`/`seats` are silently dropped. Everyone else 403. 404 unknown. `nutrition.model` is one of `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5` or `null` (platform default); `dailyPhotoLimit` 0–1000 or `null` (platform default), 0 switches photo analysis off for the studio. Fields merge, so a cap-only patch keeps the model. |
 
 ## Marketing
 

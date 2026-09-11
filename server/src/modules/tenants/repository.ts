@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase-admin/firestore'
 import { col, db, docOf, Timestamp as Ts } from '../../db/firestore.js'
-import type { Tenant, TenantPlan } from '../../domain.js'
+import type { Tenant, TenantNutritionSettings, TenantPlan } from '../../domain.js'
 import { countActiveMembers } from '../users/repository.js'
 
 type TenantDoc = {
@@ -11,6 +11,8 @@ type TenantDoc = {
   primaryColor: string | null
   /** Sign-ups that name no studio land on the flagged tenant. */
   isDefault: boolean
+  /** Absent on studios created before nutrition existed — read as platform defaults. */
+  nutrition?: TenantNutritionSettings
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -28,6 +30,7 @@ async function toTenant(row: TenantRow): Promise<Tenant> {
     seatsUsed: await countActiveMembers(row.id),
     createdAt: row.createdAt.toDate().toISOString().slice(0, 10),
     ...(row.primaryColor ? { primaryColor: row.primaryColor } : {}),
+    nutrition: { model: row.nutrition?.model ?? null, dailyPhotoLimit: row.nutrition?.dailyPhotoLimit ?? null },
   }
 }
 
@@ -81,11 +84,22 @@ export async function insertTenant(t: {
   await tenants().doc(t.id).create(doc)
 }
 
-export async function updateTenant(
-  id: string,
-  patch: Partial<{ name: string; plan: TenantPlan; seats: number; primaryColor: string | null }>,
-): Promise<void> {
-  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+export type TenantPatch = Partial<{
+  name: string
+  plan: TenantPlan
+  seats: number
+  primaryColor: string | null
+  nutrition: Partial<TenantNutritionSettings>
+}>
+
+export async function updateTenant(id: string, patch: TenantPatch): Promise<void> {
+  const { nutrition, ...rest } = patch
+  const clean: Record<string, unknown> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined))
+  // Nutrition settings merge field by field so a studio can set the cap without touching the model.
+  if (nutrition) {
+    if (nutrition.model !== undefined) clean['nutrition.model'] = nutrition.model
+    if (nutrition.dailyPhotoLimit !== undefined) clean['nutrition.dailyPhotoLimit'] = nutrition.dailyPhotoLimit
+  }
   if (Object.keys(clean).length === 0) return
   await tenants().doc(id).update({ ...clean, updatedAt: Ts.now() })
 }

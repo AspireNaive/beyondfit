@@ -2018,7 +2018,7 @@
           "Nutrition"
         ],
         "operationId": "nutritionCapabilities",
-        "summary": "Is photo analysis switched on?",
+        "summary": "Is photo analysis on, and how much is left today?",
         "responses": {
           "200": {
             "description": "Capabilities.",
@@ -2057,7 +2057,7 @@
         ],
         "operationId": "analyzeFoodPhoto",
         "summary": "Estimate a meal from a photo",
-        "description": "Claude identifies the foods and estimates portions, calories and macros. Nothing is saved; the member reviews and corrects before logging. Bodies up to 8 MB.",
+        "description": "Claude identifies the foods and estimates portions, calories and macros, using the studio's chosen model. Each call takes one slot of the member's daily allowance (the studio's cap); a failed call gives it back. Nothing is saved. Bodies up to 8 MB.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2096,7 +2096,21 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "Photo analysis is switched off for this studio. Log the meal manually.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "example": {
+                  "type": "about:blank",
+                  "title": "Forbidden",
+                  "status": 403,
+                  "detail": "Photo analysis is switched off for this studio. Log the meal manually.",
+                  "code": "ai_disabled"
+                }
+              }
+            }
           },
           "400": {
             "description": "Use a JPEG, PNG, WebP or GIF photo.",
@@ -2133,7 +2147,7 @@
             }
           },
           "429": {
-            "description": "Photo analysis is busy right now. Try again in a moment.",
+            "description": "That is 10 photo analyses today — the daily limit. You can still log meals manually until tomorrow.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2143,8 +2157,8 @@
                   "type": "about:blank",
                   "title": "Too Many Requests",
                   "status": 429,
-                  "detail": "Photo analysis is busy right now. Try again in a moment.",
-                  "code": "ai_busy"
+                  "detail": "That is 10 photo analyses today — the daily limit. You can still log meals manually until tomorrow.",
+                  "code": "ai_quota"
                 }
               }
             }
@@ -4902,6 +4916,9 @@
           "primaryColor": {
             "type": "string",
             "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "nutrition": {
+            "$ref": "#/components/schemas/TenantNutritionSettings"
           }
         },
         "required": [
@@ -4911,7 +4928,8 @@
           "plan",
           "seats",
           "seatsUsed",
-          "createdAt"
+          "createdAt",
+          "nutrition"
         ],
         "description": "A studio. primaryColor is omitted when unset.",
         "examples": [
@@ -6646,6 +6664,30 @@
               "null"
             ],
             "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "nutrition": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PhotoAnalysisModel"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dailyPhotoLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1000
+              }
+            },
+            "description": "Fields merge; an admin may set these for their own studio."
           }
         },
         "required": [
@@ -6686,6 +6728,30 @@
               "null"
             ],
             "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "nutrition": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PhotoAnalysisModel"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dailyPhotoLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1000
+              }
+            },
+            "description": "Fields merge; an admin may set these for their own studio."
           }
         },
         "description": "The slug cannot be changed.",
@@ -7904,7 +7970,10 @@
         "type": "object",
         "required": [
           "photoAnalysis",
-          "model"
+          "model",
+          "dailyLimit",
+          "usedToday",
+          "remainingToday"
         ],
         "properties": {
           "photoAnalysis": {
@@ -7915,6 +7984,59 @@
               "string",
               "null"
             ]
+          },
+          "dailyLimit": {
+            "type": "integer"
+          },
+          "usedToday": {
+            "type": "integer"
+          },
+          "remainingToday": {
+            "type": "integer"
+          }
+        },
+        "example": {
+          "photoAnalysis": true,
+          "model": "claude-opus-5",
+          "dailyLimit": 10,
+          "usedToday": 2,
+          "remainingToday": 8
+        }
+      },
+      "PhotoAnalysisModel": {
+        "type": "string",
+        "enum": [
+          "claude-opus-5",
+          "claude-sonnet-5",
+          "claude-haiku-4-5"
+        ]
+      },
+      "TenantNutritionSettings": {
+        "type": "object",
+        "required": [
+          "model",
+          "dailyPhotoLimit"
+        ],
+        "properties": {
+          "model": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PhotoAnalysisModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = platform default."
+          },
+          "dailyPhotoLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Photo analyses per member per day; 0 switches the feature off; null = platform default."
           }
         }
       }

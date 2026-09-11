@@ -131,7 +131,14 @@ export type DietPlanInput = {
   readonly guidelines: readonly string[]
 }
 
-export type NutritionCapabilities = { readonly photoAnalysis: boolean; readonly model: string | null }
+export type NutritionCapabilities = {
+  readonly photoAnalysis: boolean
+  readonly model: string | null
+  /** The studio's cap per member per day, and where this member stands today. */
+  readonly dailyLimit: number
+  readonly usedToday: number
+  readonly remainingToday: number
+}
 
 /** Calories implied by the macros — a sanity check the editor shows. */
 export const macroCalories = (m: Macros) => Math.round(m.proteinG * 4 + m.carbsG * 4 + m.fatG * 9)

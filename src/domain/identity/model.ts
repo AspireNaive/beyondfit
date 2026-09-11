@@ -139,6 +139,27 @@ export type PersonPatch = {
 export const fullName = (user: Pick<UserProfile, 'firstName' | 'lastName'>) =>
   `${user.firstName} ${user.lastName}`.trim()
 
+/** Models a studio may choose for food-photo analysis, most accurate first. */
+export const PhotoAnalysisModel = {
+  Opus: 'claude-opus-5',
+  Sonnet: 'claude-sonnet-5',
+  Haiku: 'claude-haiku-4-5',
+} as const
+export type PhotoAnalysisModel = (typeof PhotoAnalysisModel)[keyof typeof PhotoAnalysisModel]
+
+export const PHOTO_ANALYSIS_MODEL_LABELS: Record<PhotoAnalysisModel, { name: string; note: string }> = {
+  'claude-opus-5': { name: 'Claude Opus 5', note: 'Most accurate portions and calories. About 3¢ a photo.' },
+  'claude-sonnet-5': { name: 'Claude Sonnet 5', note: 'Good accuracy, faster. About 1¢ a photo.' },
+  'claude-haiku-4-5': { name: 'Claude Haiku 4.5', note: 'Fastest and cheapest, rougher portions. About 0.6¢ a photo.' },
+}
+
+/** Per-studio nutrition settings; null means "use the platform default". */
+export type TenantNutritionSettings = {
+  readonly model: PhotoAnalysisModel | null
+  /** Photo analyses per member per day; 0 switches the feature off for the studio. */
+  readonly dailyPhotoLimit: number | null
+}
+
 /** Tenant = one gym/studio on the platform. */
 export type Tenant = {
   readonly id: TenantId
@@ -149,6 +170,13 @@ export type Tenant = {
   readonly seatsUsed: number
   readonly createdAt: IsoDate
   readonly primaryColor?: string
+  readonly nutrition?: TenantNutritionSettings
+}
+
+export type TenantPatch = {
+  readonly name?: string
+  readonly primaryColor?: string | null
+  readonly nutrition?: Partial<TenantNutritionSettings>
 }
 
 export type AuthSession = {

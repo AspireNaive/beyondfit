@@ -64,6 +64,8 @@ export const col = {
   /** entryId → { dataUrl }; kept apart so diary lists stay light. */
   foodPhotos: 'foodPhotos',
   dietPlans: 'dietPlans',
+  /** `${memberId}_${date}` → { used }; the per-day photo-analysis counter. */
+  analysisQuota: 'analysisQuota',
   posts: 'posts',
   /** slug → { postId }; one public link per article. */
   postSlugs: 'postSlugs',

@@ -87,7 +87,7 @@ const anthropic = () => (client ??= new Anthropic({ apiKey: config.ai.apiKey }))
 const round5 = (n: number) => Math.max(0, Math.round(n / 5) * 5)
 const round1 = (n: number) => Math.max(0, Math.round(n))
 
-export async function analyseFoodPhoto(photo: string, hint?: string): Promise<FoodAnalysis> {
+export async function analyseFoodPhoto(photo: string, hint: string | undefined, model: string = config.ai.model): Promise<FoodAnalysis> {
   if (!config.ai.enabled) {
     throw new HttpError(503, 'Photo analysis is not set up on this server. Log the meal manually instead.', {
       title: 'Service Unavailable',
@@ -99,7 +99,7 @@ export async function analyseFoodPhoto(photo: string, hint?: string): Promise<Fo
   let response: Anthropic.Message
   try {
     response = await anthropic().messages.create({
-      model: config.ai.model,
+      model,
       // Adaptive thinking is on by default and shares this cap with the answer;
       // low effort keeps a plate estimate quick, and the headroom keeps the JSON whole.
       max_tokens: 16_000,

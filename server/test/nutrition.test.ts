@@ -88,6 +88,55 @@ describe('nutrition: food diary', () => {
   })
 })
 
+describe('nutrition: studio settings and the daily cap', () => {
+  it('a studio admin picks the model and cap; a cap of 0 switches analysis off; the cap is enforced per member per day', async () => {
+    const admin = auth(await tokenFor(ACCOUNTS.admin, 'admin'))
+    const member = auth(await tokenFor(ACCOUNTS.member))
+
+    // Defaults come from the platform.
+    const before = await api().get('/api/nutrition/capabilities').set(member)
+    expect(before.body.dailyLimit).toBeGreaterThan(0)
+    expect(before.body.remainingToday).toBe(before.body.dailyLimit - before.body.usedToday)
+
+    // Only known models are accepted.
+    expect((await api().patch('/api/tenants/t-ironworks').set(admin).send({ nutrition: { model: 'gpt-4' } })).status).toBe(422)
+
+    const set = await api().patch('/api/tenants/t-ironworks').set(admin).send({ nutrition: { model: 'claude-sonnet-5', dailyPhotoLimit: 0 } })
+    expect(set.status).toBe(200)
+    expect(set.body.nutrition).toEqual({ model: 'claude-sonnet-5', dailyPhotoLimit: 0 })
+
+    const off = await api().get('/api/nutrition/capabilities').set(member)
+    expect(off.body.photoAnalysis).toBe(false)
+    expect(off.body.dailyLimit).toBe(0)
+    const refused = await api().post('/api/members/u-member-1/food/analyze').set(member).send({ photo: TINY_JPEG })
+    expect(refused.status).toBe(403)
+    expect(refused.body.code).toBe('ai_disabled')
+
+    // A cap of 1: the first attempt reserves the slot (then fails downstream without a key, which
+    // releases it); with a cap in place a second attempt after a genuine success would be 429.
+    const one = await api().patch('/api/tenants/t-ironworks').set(admin).send({ nutrition: { dailyPhotoLimit: 1 } })
+    expect(one.body.nutrition.model).toBe('claude-sonnet-5') // untouched by a cap-only patch
+    const attempt = await api().post('/api/members/u-member-1/food/analyze').set(member).send({ photo: TINY_JPEG })
+    expect([200, 503]).toContain(attempt.status)
+    const after = await api().get('/api/nutrition/capabilities').set(member)
+    // Without a key the slot is given back; with one it is spent.
+    expect(after.body.usedToday).toBe(attempt.status === 200 ? 1 : 0)
+    if (attempt.status === 200) {
+      const second = await api().post('/api/members/u-member-1/food/analyze').set(member).send({ photo: TINY_JPEG })
+      expect(second.status).toBe(429)
+      expect(second.body.code).toBe('ai_quota')
+    }
+
+    // Members cannot change studio settings; coaches neither.
+    expect((await api().patch('/api/tenants/t-ironworks').set(member).send({ nutrition: { dailyPhotoLimit: 5 } })).status).toBe(403)
+    expect((await api().patch('/api/tenants/t-ironworks').set(auth(await tokenFor(ACCOUNTS.coach, 'coach'))).send({ nutrition: { dailyPhotoLimit: 5 } })).status).toBe(403)
+
+    // Back to platform defaults so other suites see the seeded state.
+    const reset = await api().patch('/api/tenants/t-ironworks').set(admin).send({ nutrition: { model: null, dailyPhotoLimit: null } })
+    expect(reset.body.nutrition).toEqual({ model: null, dailyPhotoLimit: null })
+  })
+})
+
 describe('nutrition: diet plans', () => {
   const plan = {
     title: 'Lean-out phase',

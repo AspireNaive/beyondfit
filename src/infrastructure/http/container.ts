@@ -6,6 +6,7 @@ import type {
   PersonPatch,
   RegisterRequest,
   Tenant,
+  TenantPatch,
   UserProfile,
 } from '@/domain/identity/model'
 import type {
@@ -187,6 +188,8 @@ export function createHttpContainer(baseUrl = import.meta.env.VITE_KEDEM_API_URL
     tenants: {
       getTenant: () => api.get<Tenant>('/tenant'),
       listTenants: () => api.get<readonly Tenant[]>('/tenants'),
+      // PATCH /api/tenants/:id — admins may change name, colour and nutrition settings of their own studio
+      updateTenant: (tenantId: Tenant['id'], patch: TenantPatch) => api.patch<Tenant>(`/tenants/${tenantId}`, patch),
     },
 
     marketing: {

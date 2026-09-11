@@ -9,7 +9,7 @@ export function useNutritionCapabilities() {
   return useQuery({
     queryKey: queryKeys.nutritionCapabilities(),
     queryFn: () => container.nutrition.capabilities(),
-    staleTime: 30 * 60_000,
+    staleTime: 60_000,
   })
 }
 
@@ -57,9 +57,12 @@ function useInvalidateFood(memberId: string | undefined) {
 }
 
 export function useAnalyzeFoodPhoto(memberId: string | undefined) {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ photo, hint }: { photo: string; hint?: string }) =>
       container.nutrition.analyzeFoodPhoto(memberId as UserId, photo, hint),
+    // Success or failure, the remaining-today count may have moved.
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.nutritionCapabilities() }),
   })
 }
 
